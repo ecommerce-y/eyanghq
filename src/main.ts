@@ -635,17 +635,22 @@ function deriveInfoLayout(
   headerHeight: number,
 ): InfoLayout {
   const edgePad = clamp(frame.viewport.width * 0.045, 24, 72);
-  const gap = clamp(frame.viewport.width * 0.024, 18, 42);
-  const preferredWidth = clamp(frame.viewport.width * 0.32, 320, 480);
-  const leftClusterRight = bounds.maxX * frame.scale;
-  const sideX = leftClusterRight + gap;
+  const gap = clamp(frame.viewport.width * 0.046, 52, 76);
+  const preferredWidth = clamp(frame.viewport.width * 0.29, 360, 420);
+  const diamondRight = (geometry.diamondCenter.x + geometry.diamondHalfDiag) * frame.scale;
+  const sideX = diamondRight + gap;
   const sideWidth = frame.viewport.width - sideX - edgePad;
-  const sideFits = sideWidth >= 300;
+  const sideFits = sideWidth >= 330;
 
   if (sideFits) {
+    const topInset = clamp(frame.viewport.height * 0.12, 82, 124);
+
     return {
       x: sideX,
-      y: headerHeight + clamp(frame.viewport.height * 0.065, 48, 88),
+      y: Math.max(
+        headerHeight + clamp(frame.viewport.height * 0.04, 32, 48),
+        geometry.diamondCenter.y * frame.scale - topInset,
+      ),
       width: Math.min(sideWidth, preferredWidth),
     };
   }
@@ -663,25 +668,28 @@ function renderManifestoPreview(
   state: AppState,
   spec: CompositionSpec,
 ): void {
-  const muted = mixColor(spec.colors.line, spec.colors.title, 0.58);
+  const pageLabel = mixColor(spec.colors.line, spec.colors.title, 0.58);
+  const sectionLabel = mixColor(spec.colors.background, spec.colors.title, 0.44);
   const body = spec.colors.title;
   const x = layout.x;
   const contentTop = layout.y;
   const pageY = contentTop;
-  const heroSize = clamp(layout.width * 0.085, 26, 42);
-  const bodySize = clamp(layout.width * 0.049, 18, 24);
-  const sectionLabelSize = 12;
-  const valueSize = clamp(layout.width * 0.046, 18, 23);
+  const heroSize = clamp(layout.width * 0.08, 30, 40);
+  const bodySize = clamp(layout.width * 0.05, 20, 22);
+  const sectionLabelSize = clamp(layout.width * 0.025, 10, 11.5);
+  const valueSize = clamp(layout.width * 0.05, 20, 22.5);
 
-  appendText(parent, x, pageY, state.page.toUpperCase(), {
-    fill: muted,
-    fontFamily: SANS_FONT,
-    fontSize: 13,
-    fontWeight: 700,
-    letterSpacing: 2.4,
-  });
+  if (state.page === "work") {
+    appendText(parent, x, pageY, state.page.toUpperCase(), {
+      fill: pageLabel,
+      fontFamily: SANS_FONT,
+      fontSize: 13,
+      fontWeight: 700,
+      letterSpacing: 2.4,
+    });
+  }
 
-  let cursorY = pageY + 34;
+  let cursorY = pageY + (state.page === "work" ? 34 : 0);
 
   if (state.page === "home") {
     cursorY = appendTextLines(
@@ -703,10 +711,8 @@ function renderManifestoPreview(
       x,
       cursorY,
       [
-        "I build and write.",
-        "I'm at Cornell right now.",
-        "I think about products",
-        "and institutional design.",
+        "I build and write. I'm at Cornell right now.",
+        "I think about products and institutional design.",
       ],
       {
         fill: body,
@@ -714,7 +720,7 @@ function renderManifestoPreview(
         fontSize: bodySize,
         fontWeight: 400,
       },
-      bodySize * 1.46,
+      bodySize * 1.34,
     );
     return;
   }
@@ -735,7 +741,7 @@ function renderManifestoPreview(
     );
     cursorY += 16;
     appendText(parent, x, cursorY, "Placeholder for now.", {
-      fill: muted,
+      fill: pageLabel,
       fontFamily: SANS_FONT,
       fontSize: bodySize,
       fontWeight: 400,
@@ -750,7 +756,11 @@ function renderManifestoPreview(
     },
     {
       label: "Favorite songs",
-      values: ["Tesselation (Mild High Club)", "Juna (Clairo)", "Schehezerade II"],
+      values: [
+        "Tesselation (Mild High Club)",
+        "Juna (Clairo)",
+        "Scheherazade II (Rimsky-Korsakov)",
+      ],
     },
     {
       label: "Favorite books",
@@ -764,13 +774,13 @@ function renderManifestoPreview(
 
   sections.forEach(({ label, values }, index) => {
     appendText(parent, x, cursorY, label.toUpperCase(), {
-      fill: muted,
+      fill: sectionLabel,
       fontFamily: SANS_FONT,
       fontSize: sectionLabelSize,
-      fontWeight: 700,
-      letterSpacing: 1.8,
+      fontWeight: 500,
+      letterSpacing: 2.6,
     });
-    cursorY += 22;
+    cursorY += clamp(valueSize * 0.78, 15, 18);
     cursorY = appendTextLines(
       parent,
       x,
@@ -782,10 +792,10 @@ function renderManifestoPreview(
         fontSize: valueSize,
         fontWeight: 400,
       },
-      valueSize * 1.42,
+      valueSize * 1.22,
     );
     if (index < sections.length - 1) {
-      cursorY += 18;
+      cursorY += clamp(valueSize * (1.1 + values.length * 0.15), 26, 34);
     }
   });
 }
