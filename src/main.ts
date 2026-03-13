@@ -1266,7 +1266,7 @@ function renderManifestoPreview(
 
   const sections: Array<{
     label: string;
-    items: Array<{ title: string; detail?: string; image?: string; link?: string; quote?: { text: string; author: string } }>;
+    items: Array<{ title: string; detail?: string; image?: string; link?: string }>;
   }> = [
     {
       label: "Favorite artist",
@@ -1283,7 +1283,7 @@ function renderManifestoPreview(
     {
       label: "Favorite books",
       items: [
-        { title: "The Road to Serfdom", quote: { text: "\u201CTo act on behalf of a group seems to free people of many of the moral restraints which control their behaviour as individuals within the group.\u201D", author: "Friedrich Hayek" } },
+        { title: "The Road to Serfdom" },
         { title: "The Calculus of Consent" },
         { title: "Team of Rivals" },
       ],
@@ -1453,72 +1453,6 @@ function renderManifestoPreview(
         pendingImages.push({ src: item.image, hitY: cursorY, hitTitle: item.title });
       }
 
-      if (item.quote) {
-        const quoteGap = clamp(layout.width * 0.08, 24, 40);
-        const quoteX = x + layout.width + quoteGap;
-        const quoteMaxWidth = clamp(layout.width * 0.55, 180, 240);
-        const quoteFontSize = t.detail.size * 0.72;
-        const quoteLineHeight = quoteFontSize * 1.45;
-        const authorFontSize = quoteFontSize * 0.85;
-
-        const words = item.quote.text.split(" ");
-        const lines: string[] = [];
-        let currentLine = "";
-        words.forEach((word) => {
-          const testLine = currentLine ? `${currentLine} ${word}` : word;
-          if (estimateTextWidth(testLine, quoteFontSize) > quoteMaxWidth && currentLine) {
-            lines.push(currentLine);
-            currentLine = word;
-          } else {
-            currentLine = testLine;
-          }
-        });
-        if (currentLine) lines.push(currentLine);
-
-        const quoteGroup = createSvgElement("g", { opacity: 0 });
-        quoteGroup.style.transition = "opacity 0.25s ease";
-        quoteGroup.style.pointerEvents = "none";
-
-        const quoteY = cursorY;
-        lines.forEach((line, lineIdx) => {
-          appendText(quoteGroup, quoteX, quoteY + lineIdx * quoteLineHeight, line, {
-            fill: t.colors.detail,
-            fontFamily: "'Cormorant Garamond', Georgia, serif",
-            fontSize: quoteFontSize,
-            fontWeight: 400,
-            fontStyle: "italic",
-          });
-        });
-
-        const authorY = quoteY + lines.length * quoteLineHeight + quoteFontSize * 0.4;
-        appendText(quoteGroup, quoteX, authorY, `\u2014 ${item.quote.author}`, {
-          fill: t.colors.detail,
-          fontFamily: SANS_FONT,
-          fontSize: authorFontSize,
-          fontWeight: 400,
-        });
-
-        parent.append(quoteGroup);
-
-        const hitPad = 4;
-        const quoteHit = createSvgElement("rect", {
-          x: x - hitPad,
-          y: cursorY - hitPad,
-          width: estimateTextWidth(item.title, t.detail.size) + hitPad * 2,
-          height: t.detail.size * t.detail.lineHeight + hitPad * 2,
-          fill: "transparent",
-          "pointer-events": "all",
-        });
-        quoteHit.style.cursor = "default";
-        quoteHit.addEventListener("pointerenter", () => {
-          quoteGroup.setAttribute("opacity", "1");
-        });
-        quoteHit.addEventListener("pointerleave", () => {
-          quoteGroup.setAttribute("opacity", "0");
-        });
-        parent.append(quoteHit);
-      }
-
       cursorY += t.detail.size * t.detail.lineHeight;
     });
 
@@ -1569,11 +1503,20 @@ function renderManifestoPreview(
       "pointer-events": "all",
     });
     hit.style.cursor = "pointer";
-    hit.addEventListener("pointerenter", () => {
-      preview.setAttribute("opacity", "1");
+    let tapped = false;
+    hit.addEventListener("pointerenter", (e) => {
+      if (e.pointerType !== "touch") {
+        preview.setAttribute("opacity", "1");
+      }
     });
-    hit.addEventListener("pointerleave", () => {
-      preview.setAttribute("opacity", "0");
+    hit.addEventListener("pointerleave", (e) => {
+      if (e.pointerType !== "touch") {
+        preview.setAttribute("opacity", "0");
+      }
+    });
+    hit.addEventListener("click", () => {
+      tapped = !tapped;
+      preview.setAttribute("opacity", tapped ? "1" : "0");
     });
     parent.append(hit);
   });
