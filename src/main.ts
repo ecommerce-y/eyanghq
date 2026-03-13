@@ -84,8 +84,13 @@ type DerivedGeometry = {
 
 type PageKey = "home" | "work" | "talk";
 type HeaderBoxKey = "name" | "work" | "talk";
+type ContactFeedback = {
+  tone: "success" | "error";
+  message: string;
+} | null;
 type AppState = {
   page: PageKey;
+  emailFeedback: ContactFeedback;
 };
 
 type HeaderBoxRefs = {
@@ -217,6 +222,7 @@ const svgNs = "http://www.w3.org/2000/svg";
 const SANS_FONT = "'Space Grotesk', 'Helvetica Neue', Arial, sans-serif";
 const INITIAL_STATE: AppState = {
   page: "home",
+  emailFeedback: null,
 };
 
 function toPx(value: number): number {
@@ -628,6 +634,279 @@ function appendTextLines(
   return cursorY;
 }
 
+function renderEmailIcon(parent: SVGElement, color: string): void {
+  const strokeAttrs = {
+    fill: "none",
+    stroke: color,
+    "stroke-width": 1.7,
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+  };
+
+  parent.append(
+    createSvgElement("rect", {
+      x: 2.75,
+      y: 5.75,
+      width: 18.5,
+      height: 12.5,
+      rx: 2.1,
+      ...strokeAttrs,
+    }),
+    createSvgElement("path", {
+      d: "M3.4 8.4L12 14.1L20.6 8.4",
+      ...strokeAttrs,
+    }),
+  );
+}
+
+function renderXIcon(parent: SVGElement, color: string): void {
+  parent.append(
+    createSvgElement("path", {
+      d: "M6 5L18 19",
+      fill: "none",
+      stroke: color,
+      "stroke-width": 2.2,
+      "stroke-linecap": "round",
+    }),
+    createSvgElement("path", {
+      d: "M18 5L6 19",
+      fill: "none",
+      stroke: color,
+      "stroke-width": 2.2,
+      "stroke-linecap": "round",
+    }),
+  );
+}
+
+function renderLinkedInIcon(parent: SVGElement, color: string): void {
+  const strokeAttrs = {
+    fill: "none",
+    stroke: color,
+    "stroke-width": 1.8,
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+  };
+
+  parent.append(
+    createSvgElement("rect", {
+      x: 2.5,
+      y: 2.5,
+      width: 18,
+      height: 18,
+      rx: 3.2,
+      ...strokeAttrs,
+    }),
+  );
+
+  const text = createSvgElement("text", {
+    x: 11.4,
+    y: 14.2,
+    fill: color,
+    "font-family": SANS_FONT,
+    "font-size": 10.8,
+    "font-weight": 700,
+    "text-anchor": "middle",
+    "dominant-baseline": "middle",
+    "letter-spacing": -0.6,
+    stroke: "none",
+  });
+  text.textContent = "in";
+  parent.append(text);
+}
+
+function appendContactLinks(
+  parent: SVGElement,
+  x: number,
+  y: number,
+  width: number,
+  spec: CompositionSpec,
+  feedback: ContactFeedback,
+  onEmailCopy: () => void,
+): void {
+  const iconColor = mixColor(spec.colors.line, spec.colors.title, 0.76);
+  const iconSize = clamp(width * 0.052, 18, 20);
+  const gap = clamp(iconSize * 0.92, 14, 18);
+  const hitInset = clamp(iconSize * 0.42, 6, 8);
+  const baseOpacity = 0.78;
+  const contacts: Array<
+    | {
+        kind: "button";
+        label: string;
+        title: string;
+        onPress: () => void;
+        renderIcon: (iconParent: SVGElement, color: string) => void;
+      }
+    | {
+        kind: "link";
+        href: string;
+        label: string;
+        title: string;
+        external: boolean;
+        renderIcon: (iconParent: SVGElement, color: string) => void;
+      }
+  > = [
+    {
+      kind: "button",
+      label: "Copy Ethan's email address",
+      title: "Copy eyanghq@gmail.com",
+      onPress: onEmailCopy,
+      renderIcon: renderEmailIcon,
+    },
+    {
+      kind: "link",
+      href: "https://x.com/ecommerce_y",
+      label: "Open Ethan's X profile",
+      title: "x.com/ecommerce_y",
+      external: true,
+      renderIcon: renderXIcon,
+    },
+    {
+      kind: "link",
+      href: "https://www.linkedin.com/in/eycyang/",
+      label: "Open Ethan's LinkedIn profile",
+      title: "linkedin.com/in/eycyang",
+      external: true,
+      renderIcon: renderLinkedInIcon,
+    },
+  ];
+
+  contacts.forEach((contact, index) => {
+    const title = createSvgElement("title", {});
+    title.textContent = contact.title;
+
+    const wrapper = createSvgElement("g", {
+      transform: `translate(${x + index * (iconSize + gap)} ${y})`,
+      opacity: index === 0 && feedback?.tone === "success" ? "1" : String(baseOpacity),
+    });
+
+    const hit = createSvgElement("rect", {
+      x: -hitInset,
+      y: -hitInset,
+      width: iconSize + hitInset * 2,
+      height: iconSize + hitInset * 2,
+      rx: hitInset * 0.9,
+      fill: spec.colors.background,
+      "fill-opacity": 0,
+      "pointer-events": "all",
+    });
+
+    const icon = createSvgElement("g", {
+      transform: `scale(${(iconSize / 24).toFixed(4)})`,
+    });
+    contact.renderIcon(icon, iconColor);
+
+    const setActive = (active: boolean): void => {
+      if (index === 0 && feedback?.tone === "success" && !active) {
+        wrapper.setAttribute("opacity", "1");
+        return;
+      }
+
+      wrapper.setAttribute("opacity", active ? "1" : String(baseOpacity));
+    };
+
+    const attachSharedInteractionHandlers = (node: SVGElement): void => {
+      node.addEventListener("pointerenter", () => {
+        setActive(true);
+      });
+      node.addEventListener("pointerleave", () => {
+        setActive(false);
+      });
+      node.addEventListener("focus", () => {
+        setActive(true);
+      });
+      node.addEventListener("blur", () => {
+        setActive(false);
+      });
+    };
+
+    wrapper.append(hit, icon);
+
+    if (contact.kind === "button") {
+      const button = createSvgElement("g", {
+        role: "button",
+        tabindex: 0,
+        focusable: "true",
+        "aria-label": contact.label,
+      });
+      button.style.cursor = "pointer";
+
+      const handleActivate = (): void => {
+        contact.onPress();
+      };
+      const handleKeyDown = (event: KeyboardEvent): void => {
+        if (event.key !== "Enter" && event.key !== " ") {
+          return;
+        }
+
+        event.preventDefault();
+        handleActivate();
+      };
+
+      attachSharedInteractionHandlers(button);
+      button.addEventListener("click", handleActivate);
+      button.addEventListener("keydown", handleKeyDown);
+      button.append(title, wrapper);
+      parent.append(button);
+      return;
+    }
+
+    const link = createSvgElement("a", {
+      href: contact.href,
+      "aria-label": contact.label,
+      tabindex: 0,
+      focusable: "true",
+    });
+
+    if (contact.external) {
+      link.setAttribute("target", "_blank");
+      link.setAttribute("rel", "noreferrer noopener");
+    }
+
+    link.style.cursor = "pointer";
+    attachSharedInteractionHandlers(link);
+    link.append(title, wrapper);
+    parent.append(link);
+  });
+
+  if (feedback !== null) {
+    const statusY = y + iconSize + clamp(iconSize * 0.72, 10, 13);
+    const statusLineWidth = clamp(iconSize * 0.72, 11, 14);
+    const statusGap = clamp(iconSize * 0.34, 5, 7);
+    const statusColor =
+      feedback.tone === "success"
+        ? mixColor(spec.colors.line, spec.colors.title, 0.82)
+        : mixColor(spec.colors.diamond, spec.colors.title, 0.42);
+
+    parent.append(
+      createSvgElement("line", {
+        x1: x,
+        y1: statusY + 6,
+        x2: x + statusLineWidth,
+        y2: statusY + 6,
+        stroke: statusColor,
+        "stroke-width": 1,
+        opacity: 0.9,
+        "vector-effect": "non-scaling-stroke",
+      }),
+    );
+
+    appendText(
+      parent,
+      x + statusLineWidth + statusGap,
+      statusY,
+      feedback.tone === "success" ? "COPIED" : "COPY FAILED",
+      {
+        fill: statusColor,
+        fontFamily: SANS_FONT,
+        fontSize: clamp(width * 0.022, 10.5, 11.5),
+        fontWeight: 600,
+        letterSpacing: 1.4,
+        opacity: 0.9,
+      },
+    );
+  }
+}
+
 function deriveInfoLayout(
   frame: LayoutFrame,
   bounds: Bounds,
@@ -667,6 +946,7 @@ function renderManifestoPreview(
   layout: InfoLayout,
   state: AppState,
   spec: CompositionSpec,
+  onEmailCopy: () => void,
 ): void {
   const pageLabel = mixColor(spec.colors.line, spec.colors.title, 0.58);
   const sectionLabel = mixColor(spec.colors.background, spec.colors.title, 0.44);
@@ -679,17 +959,7 @@ function renderManifestoPreview(
   const sectionLabelSize = clamp(layout.width * 0.025, 10, 11.5);
   const valueSize = clamp(layout.width * 0.05, 20, 22.5);
 
-  if (state.page === "work") {
-    appendText(parent, x, pageY, state.page.toUpperCase(), {
-      fill: pageLabel,
-      fontFamily: SANS_FONT,
-      fontSize: 13,
-      fontWeight: 700,
-      letterSpacing: 2.4,
-    });
-  }
-
-  let cursorY = pageY + (state.page === "work" ? 34 : 0);
+  let cursorY = pageY;
 
   if (state.page === "home") {
     cursorY = appendTextLines(
@@ -706,7 +976,7 @@ function renderManifestoPreview(
       heroSize * 1.04,
     );
     cursorY += 22;
-    appendTextLines(
+    cursorY = appendTextLines(
       parent,
       x,
       cursorY,
@@ -722,29 +992,75 @@ function renderManifestoPreview(
       },
       bodySize * 1.34,
     );
+    cursorY += clamp(bodySize * 1.05, 18, 24);
+    appendContactLinks(parent, x, cursorY, layout.width, spec, state.emailFeedback, onEmailCopy);
     return;
   }
 
   if (state.page === "work") {
+    const projects: Array<{
+      nameLines: string[];
+      details: string[];
+    }> = [
+      {
+        nameLines: ["HSPorter"],
+        details: ["AI for trade compliance.", "Got a YC interview."],
+      },
+      {
+        nameLines: ["Ideas of NYC", "(IoNYC)"],
+        details: ["Visualizer for NYC participatory budgeting."],
+      },
+    ];
+    const projectNameSize = clamp(layout.width * 0.062, 24, 28);
+    const projectBodySize = clamp(layout.width * 0.041, 16.5, 18.5);
+
     cursorY = appendTextLines(
       parent,
       x,
       cursorY,
-      ["Products I've built,", "with detail."],
+      ["Products I've built."],
       {
         fill: body,
         fontFamily: SANS_FONT,
         fontSize: heroSize * 0.82,
         fontWeight: 700,
       },
-      heroSize * 0.98,
+      heroSize * 1.02,
     );
-    cursorY += 16;
-    appendText(parent, x, cursorY, "Placeholder for now.", {
-      fill: pageLabel,
-      fontFamily: SANS_FONT,
-      fontSize: bodySize,
-      fontWeight: 400,
+    cursorY += clamp(bodySize * 0.9, 18, 22);
+
+    projects.forEach((project, index) => {
+      cursorY = appendTextLines(
+        parent,
+        x,
+        cursorY,
+        project.nameLines,
+        {
+          fill: body,
+          fontFamily: SANS_FONT,
+          fontSize: projectNameSize,
+          fontWeight: 700,
+        },
+        projectNameSize * 1.02,
+      );
+      cursorY += clamp(projectBodySize * 0.58, 10, 12);
+      cursorY = appendTextLines(
+        parent,
+        x,
+        cursorY,
+        project.details,
+        {
+          fill: body,
+          fontFamily: SANS_FONT,
+          fontSize: projectBodySize,
+          fontWeight: 400,
+        },
+        projectBodySize * 1.3,
+      );
+
+      if (index < projects.length - 1) {
+        cursorY += clamp(projectBodySize * 2.2, 32, 38);
+      }
     });
     return;
   }
@@ -800,7 +1116,12 @@ function renderManifestoPreview(
   });
 }
 
-function render(spec: CompositionSpec, svg: SVGSVGElement, state: AppState): InteractionRefs {
+function render(
+  spec: CompositionSpec,
+  svg: SVGSVGElement,
+  state: AppState,
+  onEmailCopy: () => void,
+): InteractionRefs {
   const geometry = deriveGeometry(spec);
   const bounds = deriveContentBounds(geometry);
   validateConstraints(spec, geometry, bounds);
@@ -1196,7 +1517,7 @@ function render(spec: CompositionSpec, svg: SVGSVGElement, state: AppState): Int
 
   contentGroup.append(structureGroup, boatGroup, diamondGroup, signalGroup, terminalGroup);
   const infoLayout = deriveInfoLayout(frame, bounds, geometry, headerHeight);
-  renderManifestoPreview(infoGroup, infoLayout, state, spec);
+  renderManifestoPreview(infoGroup, infoLayout, state, spec, onEmailCopy);
 
   svg.append(defs, background, headerBoxes, headerOutline, contentGroup, infoGroup);
 
@@ -1593,6 +1914,71 @@ function randomGhostCharacter(): string {
   return glyphs[Math.floor(Math.random() * glyphs.length)];
 }
 
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const selection = globalThis.getSelection?.() ?? null;
+  const previousRanges =
+    selection === null
+      ? []
+      : Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index));
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.top = "0";
+  textarea.style.left = "-9999px";
+  textarea.style.opacity = "0";
+  document.body.append(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, text.length);
+
+  const copied = document.execCommand("copy");
+  textarea.remove();
+
+  if (selection !== null) {
+    selection.removeAllRanges();
+    previousRanges.forEach((range) => {
+      selection.addRange(range);
+    });
+  }
+
+  activeElement?.focus();
+
+  if (!copied) {
+    throw new Error("Clipboard copy failed");
+  }
+}
+
+function ensureAnnouncer(id: string): HTMLElement {
+  const existing = document.getElementById(id);
+  if (existing !== null) {
+    return existing;
+  }
+
+  const node = document.createElement("p");
+  node.id = id;
+  node.setAttribute("aria-live", "polite");
+  node.setAttribute("aria-atomic", "true");
+  node.style.position = "fixed";
+  node.style.width = "1px";
+  node.style.height = "1px";
+  node.style.margin = "-1px";
+  node.style.padding = "0";
+  node.style.overflow = "hidden";
+  node.style.clip = "rect(0 0 0 0)";
+  node.style.clipPath = "inset(50%)";
+  node.style.whiteSpace = "nowrap";
+  node.style.border = "0";
+  document.body.append(node);
+  return node;
+}
+
 function setupTerminalInteraction(
   refs: TerminalRefs,
   spec: CompositionSpec,
@@ -1701,7 +2087,6 @@ function setupInteractions(
         setState({ page: headerKeyToPage(box.key) });
       }),
     ),
-    setupBoatInteraction(refs.boat, reducedMotion),
     setupDiamondInteraction(refs.diamond, reducedMotion),
     setupSignalInteraction(refs.signal, spec, reducedMotion),
     setupTerminalInteraction(refs.terminal, spec, reducedMotion),
@@ -1721,14 +2106,19 @@ function mount(spec: CompositionSpec): void {
   }
 
   const host = globalThis;
+  const announcer = ensureAnnouncer("contact-status-announcer");
   const reducedMotionQuery = host.matchMedia?.("(prefers-reduced-motion: reduce)") ?? null;
+  const emailAddress = "eyanghq@gmail.com";
   let frameId: number | null = null;
+  let announceTimeoutId: number | null = null;
   let cleanupInteractions: (() => void) | null = null;
+  let feedbackTimeoutId: number | null = null;
   let state: AppState = { ...INITIAL_STATE };
 
   const setState = (patch: Partial<AppState>): void => {
     const nextState = { ...state, ...patch };
-    const changed = nextState.page !== state.page;
+    const changed =
+      nextState.page !== state.page || nextState.emailFeedback !== state.emailFeedback;
 
     if (!changed) {
       return;
@@ -1738,10 +2128,51 @@ function mount(spec: CompositionSpec): void {
     scheduleRender();
   };
 
+  const announce = (message: string): void => {
+    if (announceTimeoutId !== null) {
+      host.clearTimeout(announceTimeoutId);
+    }
+
+    announcer.textContent = "";
+    announceTimeoutId = host.setTimeout(() => {
+      announcer.textContent = message;
+      announceTimeoutId = null;
+    }, 24);
+  };
+
+  const showEmailFeedback = (feedback: NonNullable<ContactFeedback>): void => {
+    if (feedbackTimeoutId !== null) {
+      host.clearTimeout(feedbackTimeoutId);
+    }
+
+    setState({ emailFeedback: feedback });
+    announce(feedback.message);
+    feedbackTimeoutId = host.setTimeout(() => {
+      feedbackTimeoutId = null;
+      setState({ emailFeedback: null });
+    }, 1400);
+  };
+
+  const handleEmailCopy = (): void => {
+    void copyTextToClipboard(emailAddress)
+      .then(() => {
+        showEmailFeedback({
+          tone: "success",
+          message: "Copied email",
+        });
+      })
+      .catch(() => {
+        showEmailFeedback({
+          tone: "error",
+          message: "Copy failed",
+        });
+      });
+  };
+
   const commitRender = (): void => {
     cleanupInteractions?.();
     cleanupInteractions = setupInteractions(
-      render(spec, svg, state),
+      render(spec, svg, state, handleEmailCopy),
       spec,
       Boolean(reducedMotionQuery?.matches),
       setState,
