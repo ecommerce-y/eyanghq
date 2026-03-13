@@ -92,21 +92,16 @@ type HeaderBoxRefs = {
   hit: SVGRectElement;
 };
 
-type DiamondCell = {
-  rect: SVGRectElement;
-  baseX: number;
-  baseY: number;
-  offsetX: number;
-  offsetY: number;
-  baseOpacity: number;
-};
-
 type DiamondRefs = {
   group: SVGGElement;
   hit: SVGRectElement;
-  clean: SVGPolygonElement;
-  gridGroup: SVGGElement;
-  cells: DiamondCell[];
+};
+
+type BoatRefs = {
+  line: SVGLineElement;
+  hit: SVGLineElement;
+  start: Point;
+  end: Point;
   center: Point;
 };
 
@@ -121,12 +116,12 @@ type SignalRefs = {
 type TerminalRefs = {
   hit: SVGRectElement;
   panel: SVGRectElement;
-  border: SVGRectElement;
   cursor: SVGTextElement;
 };
 
 type InteractionRefs = {
   headerBoxes: HeaderBoxRefs[];
+  boat: BoatRefs;
   diamond: DiamondRefs;
   signal: SignalRefs;
   terminal: TerminalRefs;
@@ -255,6 +250,19 @@ function mixColor(base: string, accent: string, amount: number): string {
 
 function estimateTextWidth(text: string, fontSize: number): number {
   return text.length * fontSize * 0.58;
+}
+
+function rotatePoint(point: Point, center: Point, angleDeg: number): Point {
+  const angleRad = (angleDeg * Math.PI) / 180;
+  const cos = Math.cos(angleRad);
+  const sin = Math.sin(angleRad);
+  const dx = point.x - center.x;
+  const dy = point.y - center.y;
+
+  return {
+    x: center.x + dx * cos - dy * sin,
+    y: center.y + dx * sin + dy * cos,
+  };
 }
 
 function animate(options: AnimationOptions): () => void {
@@ -745,10 +753,7 @@ function render(spec: CompositionSpec, svg: SVGSVGElement): InteractionRefs {
     fill: "none",
   });
 
-  const structuralLines: Array<[Point, Point]> = [
-    [geometry.junction, geometry.leftHit],
-    [geometry.branchStart, geometry.branchEnd],
-  ];
+  const structuralLines: Array<[Point, Point]> = [[geometry.junction, geometry.leftHit]];
 
   structuralLines.forEach(([start, end]) => {
     structureGroup.append(
@@ -762,6 +767,30 @@ function render(spec: CompositionSpec, svg: SVGSVGElement): InteractionRefs {
     );
   });
 
+  const boatGroup = createSvgElement("g", {});
+  const boatLine = createSvgElement("line", {
+    x1: geometry.branchStart.x,
+    y1: geometry.branchStart.y,
+    x2: geometry.branchEnd.x,
+    y2: geometry.branchEnd.y,
+    stroke: spec.colors.line,
+    "stroke-width": strokeWidth,
+    "vector-effect": "non-scaling-stroke",
+  });
+  const boatHit = createSvgElement("line", {
+    x1: geometry.branchStart.x,
+    y1: geometry.branchStart.y,
+    x2: geometry.branchEnd.x,
+    y2: geometry.branchEnd.y,
+    stroke: spec.colors.background,
+    "stroke-opacity": 0,
+    "stroke-width": 28,
+    "stroke-linecap": "round",
+    "pointer-events": "stroke",
+    "vector-effect": "non-scaling-stroke",
+  });
+  boatGroup.append(boatLine, boatHit);
+
   const diamondPoints = [
     `${geometry.diamondCenter.x},${geometry.diamondCenter.y - geometry.diamondHalfDiag}`,
     `${geometry.diamondCenter.x + geometry.diamondHalfDiag},${geometry.diamondCenter.y}`,
@@ -769,76 +798,24 @@ function render(spec: CompositionSpec, svg: SVGSVGElement): InteractionRefs {
     `${geometry.diamondCenter.x - geometry.diamondHalfDiag},${geometry.diamondCenter.y}`,
   ].join(" ");
 
-  const diamondClip = createSvgElement("clipPath", {
-    id: "diamond-grid-clip",
-  });
-  diamondClip.append(
-    createSvgElement("polygon", {
-      points: diamondPoints,
-    }),
-  );
-  defs.append(diamondClip);
-
   const diamondGroup = createSvgElement("g", {});
-  const diamondGrid = createSvgElement("g", {
-    "clip-path": "url(#diamond-grid-clip)",
-    opacity: 0,
-    "shape-rendering": "crispEdges",
-  });
   const diamond = createSvgElement("polygon", {
     points: diamondPoints,
     fill: spec.colors.diamond,
   });
 
-  const diamondCells: DiamondCell[] = [];
-  const gridCount = 4;
-  const gridSpan = geometry.diamondHalfDiag * 2;
-  const cellSize = gridSpan / gridCount;
-  const cellGap = Math.max(4, Math.round(cellSize * 0.16));
-  const gridOriginX = geometry.diamondCenter.x - geometry.diamondHalfDiag;
-  const gridOriginY = geometry.diamondCenter.y - geometry.diamondHalfDiag;
-  const shiftStep = Math.max(4, Math.round(cellSize * 0.18));
-
-  for (let row = 0; row < gridCount; row += 1) {
-    for (let column = 0; column < gridCount; column += 1) {
-      const baseX = gridOriginX + column * cellSize + cellGap / 2;
-      const baseY = gridOriginY + row * cellSize + cellGap / 2;
-      const cell = createSvgElement("rect", {
-        x: baseX,
-        y: baseY,
-        width: Math.max(2, cellSize - cellGap),
-        height: Math.max(2, cellSize - cellGap),
-        fill:
-          (row + column) % 2 === 0
-            ? mixColor(spec.colors.diamond, spec.colors.background, 0.14)
-            : mixColor(spec.colors.diamond, spec.colors.title, 0.14),
-        opacity: 0.62,
-      });
-
-      diamondGrid.append(cell);
-      diamondCells.push({
-        rect: cell,
-        baseX,
-        baseY,
-        offsetX: Math.sign(column - (gridCount - 1) / 2) * shiftStep,
-        offsetY: Math.sign(row - (gridCount - 1) / 2) * shiftStep,
-        baseOpacity: 0.62,
-      });
-    }
-  }
-
   const diamondHit = createSvgElement("rect", {
-    x: geometry.diamondCenter.x - geometry.diamondHalfDiag - cellSize * 0.25,
-    y: geometry.diamondCenter.y - geometry.diamondHalfDiag - cellSize * 0.25,
-    width: gridSpan + cellSize * 0.5,
-    height: gridSpan + cellSize * 0.5,
+    x: geometry.diamondCenter.x - geometry.diamondHalfDiag - 10,
+    y: geometry.diamondCenter.y - geometry.diamondHalfDiag - 10,
+    width: geometry.diamondHalfDiag * 2 + 20,
+    height: geometry.diamondHalfDiag * 2 + 20,
     fill: spec.colors.background,
     "fill-opacity": 0,
     "pointer-events": "all",
   });
   diamondHit.style.cursor = "pointer";
 
-  diamondGroup.append(diamondGrid, diamond, diamondHit);
+  diamondGroup.append(diamond, diamondHit);
 
   const signalGroup = createSvgElement("g", {});
   const thinkingWidth = estimateTextWidth(spec.text.thinking, spec.text.thinkingSize);
@@ -926,19 +903,6 @@ function render(spec: CompositionSpec, svg: SVGSVGElement): InteractionRefs {
     "shape-rendering": "crispEdges",
   });
 
-  const panelBorder = createSvgElement("rect", {
-    x: geometry.panel.x,
-    y: geometry.panel.y,
-    width: geometry.panel.width,
-    height: geometry.panel.height,
-    fill: "none",
-    stroke: spec.colors.line,
-    "stroke-width": strokeWidth,
-    opacity: 0.12,
-    "vector-effect": "non-scaling-stroke",
-    "shape-rendering": "crispEdges",
-  });
-
   const cursor = createSvgElement("text", {
     x: geometry.cursorPos.x,
     y: geometry.cursorPos.y,
@@ -960,20 +924,26 @@ function render(spec: CompositionSpec, svg: SVGSVGElement): InteractionRefs {
     "pointer-events": "all",
   });
 
-  terminalGroup.append(panel, panelBorder, cursor, terminalHit);
+  terminalGroup.append(panel, cursor, terminalHit);
 
-  contentGroup.append(structureGroup, diamondGroup, signalGroup, terminalGroup);
+  contentGroup.append(structureGroup, boatGroup, diamondGroup, signalGroup, terminalGroup);
   svg.append(defs, background, headerBoxes, headerOutline, contentGroup);
 
   return {
     headerBoxes: headerBoxRefs,
+    boat: {
+      line: boatLine,
+      hit: boatHit,
+      start: geometry.branchStart,
+      end: geometry.branchEnd,
+      center: {
+        x: (geometry.branchStart.x + geometry.branchEnd.x) / 2,
+        y: (geometry.branchStart.y + geometry.branchEnd.y) / 2,
+      },
+    },
     diamond: {
       group: diamondGroup,
       hit: diamondHit,
-      clean: diamond,
-      gridGroup: diamondGrid,
-      cells: diamondCells,
-      center: geometry.diamondCenter,
     },
     signal: {
       hit: signalHit,
@@ -985,7 +955,6 @@ function render(spec: CompositionSpec, svg: SVGSVGElement): InteractionRefs {
     terminal: {
       hit: terminalHit,
       panel,
-      border: panelBorder,
       cursor,
     },
   };
@@ -1079,101 +1048,168 @@ function setupHeaderBoxInteraction(
   };
 }
 
-function applyDiamondRotation(refs: DiamondRefs, angle: number): void {
-  if (angle === 0) {
-    refs.group.removeAttribute("transform");
-    return;
-  }
-
-  refs.group.setAttribute(
-    "transform",
-    `translate(${refs.center.x} ${refs.center.y}) rotate(${angle}) translate(${-refs.center.x} ${-refs.center.y})`,
-  );
-}
-
 function setupDiamondInteraction(refs: DiamondRefs, reducedMotion: boolean): () => void {
-  let hoverCancel: (() => void) | null = null;
-  let pressCancel: (() => void) | null = null;
+  let idleOffset = 0;
+  let returnCancel: (() => void) | null = null;
+  let loopFrame: number | null = null;
+  let hoverStart = 0;
 
-  const applyFacetState = (amount: number): void => {
-    refs.clean.setAttribute("opacity", (1 - amount * 0.58).toFixed(3));
-    refs.gridGroup.setAttribute("opacity", (amount * 0.9).toFixed(3));
+  const apply = (offsetY: number): void => {
+    idleOffset = offsetY;
 
-    const snapped = Math.round(amount * 4) / 4;
-    refs.cells.forEach((cell) => {
-      cell.rect.setAttribute("x", (cell.baseX + cell.offsetX * snapped).toFixed(2));
-      cell.rect.setAttribute("y", (cell.baseY + cell.offsetY * snapped).toFixed(2));
-      cell.rect.setAttribute(
-        "opacity",
-        (cell.baseOpacity * (0.65 + snapped * 0.35)).toFixed(3),
-      );
-    });
-  };
-
-  const triggerHoverBurst = (): void => {
-    hoverCancel?.();
-
-    if (reducedMotion) {
-      applyFacetState(0);
+    if (Math.abs(offsetY) < 0.01) {
+      refs.group.removeAttribute("transform");
       return;
     }
 
-    hoverCancel = animate({
-      duration: 260,
+    refs.group.setAttribute("transform", `translate(0 ${offsetY.toFixed(2)})`);
+  };
+
+  const stopLoop = (): void => {
+    if (loopFrame !== null) {
+      globalThis.cancelAnimationFrame(loopFrame);
+      loopFrame = null;
+    }
+  };
+
+  const startLoop = (): void => {
+    stopLoop();
+
+    if (reducedMotion) {
+      apply(0);
+      return;
+    }
+
+    hoverStart = globalThis.performance.now();
+    const amplitude = 4;
+    const period = 1350;
+
+    const tick = (now: number): void => {
+      const elapsed = now - hoverStart;
+      const phase = (elapsed / period) * Math.PI * 2;
+      const offset = Math.sin(phase) * amplitude;
+      apply(offset);
+      loopFrame = globalThis.requestAnimationFrame(tick);
+    };
+
+    loopFrame = globalThis.requestAnimationFrame(tick);
+  };
+
+  const settle = (): void => {
+    stopLoop();
+    returnCancel?.();
+
+    if (reducedMotion) {
+      apply(0);
+      return;
+    }
+
+    const from = idleOffset;
+    returnCancel = animate({
+      duration: 180,
+      from,
+      to: 0,
+      easing: easeInOutCubic,
+      onUpdate: (value: number) => {
+        apply(value);
+      },
+      onComplete: () => {
+        apply(0);
+        returnCancel = null;
+      },
+    });
+  };
+
+  const handleEnter = (): void => {
+    returnCancel?.();
+    returnCancel = null;
+    startLoop();
+  };
+
+  const handleLeave = (): void => {
+    settle();
+  };
+
+  refs.hit.addEventListener("pointerenter", handleEnter);
+  refs.hit.addEventListener("pointerleave", handleLeave);
+  apply(0);
+
+  return () => {
+    stopLoop();
+    returnCancel?.();
+    refs.hit.removeEventListener("pointerenter", handleEnter);
+    refs.hit.removeEventListener("pointerleave", handleLeave);
+    apply(0);
+  };
+}
+
+function setupBoatInteraction(refs: BoatRefs, reducedMotion: boolean): () => void {
+  let bobCancel: (() => void) | null = null;
+
+  const apply = (heave: number, roll: number): void => {
+    const start = rotatePoint(refs.start, refs.center, roll);
+    const end = rotatePoint(refs.end, refs.center, roll);
+
+    refs.line.setAttribute("x1", start.x.toFixed(2));
+    refs.line.setAttribute("y1", (start.y - heave).toFixed(2));
+    refs.line.setAttribute("x2", end.x.toFixed(2));
+    refs.line.setAttribute("y2", (end.y - heave).toFixed(2));
+    refs.hit.setAttribute("x1", start.x.toFixed(2));
+    refs.hit.setAttribute("y1", (start.y - heave).toFixed(2));
+    refs.hit.setAttribute("x2", end.x.toFixed(2));
+    refs.hit.setAttribute("y2", (end.y - heave).toFixed(2));
+  };
+
+  const reset = (): void => {
+    apply(0, 0);
+  };
+
+  const triggerBob = (): void => {
+    bobCancel?.();
+
+    if (reducedMotion) {
+      reset();
+      return;
+    }
+
+    bobCancel = animate({
+      duration: 720,
       from: 0,
       to: 1,
       easing: easeOutCubic,
       onUpdate: (_value: number, raw: number) => {
-        applyFacetState(Math.sin(raw * Math.PI));
+        const damping = (1 - raw) ** 1.35;
+        const wave = Math.sin(raw * Math.PI * 2.8);
+        const heave = wave * damping * 5.5;
+        const roll = wave * damping * 0.9;
+        apply(heave, roll);
       },
       onComplete: () => {
-        applyFacetState(0);
-        hoverCancel = null;
+        reset();
+        bobCancel = null;
       },
     });
   };
 
-  const triggerPress = (): void => {
-    pressCancel?.();
-
-    if (reducedMotion) {
-      applyDiamondRotation(refs, 0);
-      return;
-    }
-
-    pressCancel = runStepSequence(
-      [0, -6, 4, -2, 0] as const,
-      48,
-      (angle) => {
-        applyDiamondRotation(refs, angle);
-      },
-      () => {
-        applyDiamondRotation(refs, 0);
-        pressCancel = null;
-      },
-    );
-  };
-
   const handleEnter = (): void => {
-    triggerHoverBurst();
+    triggerBob();
   };
 
-  const handleDown = (): void => {
-    triggerHoverBurst();
-    triggerPress();
+  const handleLeave = (): void => {
+    bobCancel?.();
+    bobCancel = null;
+    reset();
   };
 
   refs.hit.addEventListener("pointerenter", handleEnter);
-  refs.hit.addEventListener("pointerdown", handleDown);
-  applyFacetState(0);
+  refs.hit.addEventListener("pointerleave", handleLeave);
+  reset();
 
   return () => {
-    hoverCancel?.();
-    pressCancel?.();
+    bobCancel?.();
     refs.hit.removeEventListener("pointerenter", handleEnter);
-    refs.hit.removeEventListener("pointerdown", handleDown);
-    applyFacetState(0);
-    applyDiamondRotation(refs, 0);
+    refs.hit.removeEventListener("pointerleave", handleLeave);
+    reset();
   };
 }
 
@@ -1288,13 +1324,10 @@ function setupTerminalInteraction(
   let stateCancel: (() => void) | null = null;
   let typingCancel: (() => void) | null = null;
   const activeFill = mixColor(spec.colors.panel, spec.colors.title, 0.18);
-  const activeBorder = mixColor(spec.colors.line, spec.colors.title, 0.58);
   const activeCursor = mixColor(spec.colors.cursor, spec.colors.background, 0.88);
 
   const apply = (): void => {
     refs.panel.setAttribute("fill", interpolateColor(spec.colors.panel, activeFill, active));
-    refs.border.setAttribute("stroke", interpolateColor(spec.colors.line, activeBorder, active));
-    refs.border.setAttribute("opacity", (0.12 + active * 0.56).toFixed(3));
     refs.cursor.setAttribute("fill", interpolateColor(spec.colors.cursor, activeCursor, active));
   };
 
@@ -1385,6 +1418,7 @@ function setupInteractions(
 ): () => void {
   const cleanups = [
     ...refs.headerBoxes.map((box) => setupHeaderBoxInteraction(box, reducedMotion)),
+    setupBoatInteraction(refs.boat, reducedMotion),
     setupDiamondInteraction(refs.diamond, reducedMotion),
     setupSignalInteraction(refs.signal, spec, reducedMotion),
     setupTerminalInteraction(refs.terminal, spec, reducedMotion),
