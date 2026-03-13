@@ -82,6 +82,65 @@ type DerivedGeometry = {
   cursorPos: Point;
 };
 
+type HeaderBoxKey = "name" | "work" | "talk";
+
+type HeaderBoxRefs = {
+  box: Rect;
+  fill: SVGRectElement;
+  clipRect: SVGRectElement;
+  border: SVGRectElement;
+  hit: SVGRectElement;
+};
+
+type DiamondCell = {
+  rect: SVGRectElement;
+  baseX: number;
+  baseY: number;
+  offsetX: number;
+  offsetY: number;
+  baseOpacity: number;
+};
+
+type DiamondRefs = {
+  group: SVGGElement;
+  hit: SVGRectElement;
+  clean: SVGPolygonElement;
+  gridGroup: SVGGElement;
+  cells: DiamondCell[];
+  center: Point;
+};
+
+type SignalRefs = {
+  hit: SVGRectElement;
+  halo: SVGCircleElement;
+  thinkingSoft: SVGTextElement;
+  thinkingCrisp: SVGTextElement;
+  baseRadius: number;
+};
+
+type TerminalRefs = {
+  hit: SVGRectElement;
+  panel: SVGRectElement;
+  border: SVGRectElement;
+  cursor: SVGTextElement;
+};
+
+type InteractionRefs = {
+  headerBoxes: HeaderBoxRefs[];
+  diamond: DiamondRefs;
+  signal: SignalRefs;
+  terminal: TerminalRefs;
+};
+
+type AnimationOptions = {
+  duration: number;
+  from: number;
+  to: number;
+  easing?: (t: number) => number;
+  onUpdate: (value: number, progress: number) => void;
+  onComplete?: () => void;
+};
+
 const SPEC: CompositionSpec = {
   reference: {
     width: 1600,
@@ -146,10 +205,147 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function clamp01(value: number): number {
+  return clamp(value, 0, 1);
+}
+
 function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(`Composition constraint failed: ${message}`);
   }
+}
+
+function easeOutCubic(t: number): number {
+  return 1 - (1 - t) ** 3;
+}
+
+function easeInOutCubic(t: number): number {
+  if (t < 0.5) {
+    return 4 * t ** 3;
+  }
+
+  return 1 - (-2 * t + 2) ** 3 / 2;
+}
+
+function parseHexColor(color: string): [number, number, number] {
+  const normalized = color.trim().replace("#", "");
+  assert(normalized.length === 6, `Expected 6-digit hex color, received "${color}"`);
+
+  const red = Number.parseInt(normalized.slice(0, 2), 16);
+  const green = Number.parseInt(normalized.slice(2, 4), 16);
+  const blue = Number.parseInt(normalized.slice(4, 6), 16);
+
+  return [red, green, blue];
+}
+
+function interpolateColor(from: string, to: string, t: number): string {
+  const [fromR, fromG, fromB] = parseHexColor(from);
+  const [toR, toG, toB] = parseHexColor(to);
+  const mix = clamp01(t);
+  const red = Math.round(fromR + (toR - fromR) * mix);
+  const green = Math.round(fromG + (toG - fromG) * mix);
+  const blue = Math.round(fromB + (toB - fromB) * mix);
+
+  return `#${[red, green, blue].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function mixColor(base: string, accent: string, amount: number): string {
+  return interpolateColor(base, accent, amount);
+}
+
+function estimateTextWidth(text: string, fontSize: number): number {
+  return text.length * fontSize * 0.58;
+}
+
+function animate(options: AnimationOptions): () => void {
+  const {
+    duration,
+    from,
+    to,
+    easing = (value: number) => value,
+    onUpdate,
+    onComplete,
+  } = options;
+
+  if (duration <= 0) {
+    onUpdate(to, 1);
+    onComplete?.();
+    return () => undefined;
+  }
+
+  const host = globalThis;
+  const start = host.performance.now();
+  let frameId = 0;
+  let active = true;
+
+  const tick = (now: number): void => {
+    if (!active) {
+      return;
+    }
+
+    const progress = clamp01((now - start) / duration);
+    const eased = easing(progress);
+    const value = from + (to - from) * eased;
+    onUpdate(value, progress);
+
+    if (progress >= 1) {
+      active = false;
+      onComplete?.();
+      return;
+    }
+
+    frameId = host.requestAnimationFrame(tick);
+  };
+
+  frameId = host.requestAnimationFrame(tick);
+
+  return () => {
+    active = false;
+    host.cancelAnimationFrame(frameId);
+  };
+}
+
+function runStepSequence<T>(
+  frames: readonly T[],
+  stepMs: number,
+  apply: (frame: T) => void,
+  onComplete?: () => void,
+): () => void {
+  if (frames.length === 0) {
+    onComplete?.();
+    return () => undefined;
+  }
+
+  const host = globalThis;
+  let timeoutId: number | null = null;
+  let index = 0;
+  let active = true;
+
+  const advance = (): void => {
+    if (!active) {
+      return;
+    }
+
+    apply(frames[index]);
+
+    if (index === frames.length - 1) {
+      onComplete?.();
+      return;
+    }
+
+    index += 1;
+    timeoutId = host.setTimeout(advance, stepMs);
+  };
+
+  advance();
+
+  return () => {
+    active = false;
+
+    if (timeoutId !== null) {
+      host.clearTimeout(timeoutId);
+    }
+  };
 }
 
 function deriveGeometry(spec: CompositionSpec): DerivedGeometry {
@@ -333,7 +529,7 @@ function createSvgElement<T extends keyof SVGElementTagNameMap>(
   return node;
 }
 
-function render(spec: CompositionSpec, svg: SVGSVGElement): void {
+function render(spec: CompositionSpec, svg: SVGSVGElement): InteractionRefs {
   const geometry = deriveGeometry(spec);
   const bounds = deriveContentBounds(geometry);
   validateConstraints(spec, geometry, bounds);
@@ -345,22 +541,27 @@ function render(spec: CompositionSpec, svg: SVGSVGElement): void {
   svg.setAttribute("preserveAspectRatio", "none");
   svg.replaceChildren();
 
+  const defs = createSvgElement("defs", {});
+  const thinkingBlur = createSvgElement("filter", {
+    id: "thinking-soften",
+    x: "-20%",
+    y: "-20%",
+    width: "140%",
+    height: "140%",
+  });
+  thinkingBlur.append(
+    createSvgElement("feGaussianBlur", {
+      stdDeviation: 0.8,
+    }),
+  );
+  defs.append(thinkingBlur);
+
   const background = createSvgElement("rect", {
     x: 0,
     y: 0,
     width: frame.viewport.width,
     height: frame.viewport.height,
     fill: spec.colors.background,
-  });
-
-  const horizontalLine = createSvgElement("line", {
-    x1: 0,
-    y1: geometry.junction.y * frame.scale,
-    x2: frame.viewport.width,
-    y2: geometry.junction.y * frame.scale,
-    stroke: spec.colors.line,
-    "stroke-width": strokeWidth,
-    "vector-effect": "non-scaling-stroke",
   });
 
   const headerHeight = geometry.header.height * frame.scale;
@@ -370,48 +571,168 @@ function render(spec: CompositionSpec, svg: SVGSVGElement): void {
   const headerLabelXOffset = headerSectionWidth * headerLabelPadXRatio;
   const headerLabelY = headerHeight / 2 + spec.text.headerTextOffsetY * frame.scale;
   const headerLabelSize = spec.text.titleSize * frame.scale;
+  const headerFill = spec.colors.title;
+  const nameIdleFill = mixColor(spec.colors.headerLabel, spec.colors.title, 0.25);
+  const boxIdleFill = mixColor(spec.colors.headerLabel, spec.colors.title, 0.1);
 
-  const headerOverlay = createSvgElement("g", {
-    stroke: spec.colors.line,
-    "stroke-width": strokeWidth,
-    fill: "none",
-  });
+  const headerBoxRefs: HeaderBoxRefs[] = [];
+  const headerBoxes = createSvgElement("g", {});
 
-  const headerSections = [
+  const headerSpecs: Array<{
+    key: HeaderBoxKey;
+    label: string;
+    box: Rect;
+    labelX: number;
+    labelY: number;
+    baseFill: string;
+  }> = [
     {
-      label: spec.text.work,
-      x: frame.viewport.width - headerSectionWidth * 2,
+      key: "name",
+      label: spec.text.title,
+      box: { x: 0, y: 0, width: headerWidth, height: headerHeight },
+      labelX: geometry.titlePos.x * frame.scale,
+      labelY: headerLabelY,
+      baseFill: nameIdleFill,
     },
     {
+      key: "work",
+      label: spec.text.work,
+      box: {
+        x: frame.viewport.width - headerSectionWidth * 2,
+        y: 0,
+        width: headerSectionWidth,
+        height: headerHeight,
+      },
+      labelX: frame.viewport.width - headerSectionWidth * 2 + headerLabelXOffset,
+      labelY: headerLabelY,
+      baseFill: boxIdleFill,
+    },
+    {
+      key: "talk",
       label: spec.text.talk,
-      x: frame.viewport.width - headerSectionWidth,
+      box: {
+        x: frame.viewport.width - headerSectionWidth,
+        y: 0,
+        width: headerSectionWidth,
+        height: headerHeight,
+      },
+      labelX: frame.viewport.width - headerSectionWidth + headerLabelXOffset,
+      labelY: headerLabelY,
+      baseFill: boxIdleFill,
     },
   ];
 
-  headerSections.forEach(({ label, x }) => {
-    headerOverlay.append(
-      createSvgElement("line", {
-        x1: x,
-        y1: 0,
-        x2: x,
-        y2: headerHeight,
-        "vector-effect": "non-scaling-stroke",
-      }),
-    );
+  headerSpecs.forEach(({ key, label, box, labelX, labelY, baseFill }) => {
+    const clipId = `header-box-${key}-clip`;
+    const clipRect = createSvgElement("rect", {
+      x: box.x,
+      y: box.y,
+      width: 0,
+      height: box.height,
+    });
+    const clipPath = createSvgElement("clipPath", {
+      id: clipId,
+    });
+    clipPath.append(clipRect);
+    defs.append(clipPath);
 
-    const headerLabel = createSvgElement("text", {
-      x: x + headerLabelXOffset,
-      y: headerLabelY,
-      fill: spec.colors.headerLabel,
+    const boxGroup = createSvgElement("g", {});
+    const fill = createSvgElement("rect", {
+      x: box.x,
+      y: box.y,
+      width: 0,
+      height: box.height,
+      fill: headerFill,
+      opacity: 0,
+    });
+
+    const baseText = createSvgElement("text", {
+      x: labelX,
+      y: labelY,
+      fill: baseFill,
       "font-family": "'Space Grotesk', 'Helvetica Neue', Arial, sans-serif",
       "font-size": headerLabelSize,
       "font-weight": 700,
       "dominant-baseline": "middle",
       stroke: "none",
     });
-    headerLabel.textContent = label;
+    baseText.textContent = label;
 
-    headerOverlay.append(headerLabel);
+    const revealText = createSvgElement("text", {
+      x: labelX,
+      y: labelY,
+      fill: spec.colors.background,
+      "font-family": "'Space Grotesk', 'Helvetica Neue', Arial, sans-serif",
+      "font-size": headerLabelSize,
+      "font-weight": 700,
+      "dominant-baseline": "middle",
+      stroke: "none",
+      "clip-path": `url(#${clipId})`,
+    });
+    revealText.textContent = label;
+
+    const border = createSvgElement("rect", {
+      x: box.x,
+      y: box.y,
+      width: box.width,
+      height: box.height,
+      fill: "none",
+      stroke: mixColor(spec.colors.line, spec.colors.title, 0.72),
+      "stroke-width": strokeWidth,
+      opacity: 0,
+      "vector-effect": "non-scaling-stroke",
+    });
+
+    const hit = createSvgElement("rect", {
+      x: box.x,
+      y: box.y,
+      width: box.width,
+      height: box.height,
+      fill: spec.colors.background,
+      "fill-opacity": 0,
+      "pointer-events": "all",
+    });
+
+    boxGroup.append(fill, baseText, revealText, border, hit);
+    headerBoxes.append(boxGroup);
+    headerBoxRefs.push({
+      box,
+      fill,
+      clipRect,
+      border,
+      hit,
+    });
+  });
+
+  const headerOutline = createSvgElement("g", {
+    stroke: spec.colors.line,
+    "stroke-width": strokeWidth,
+    fill: "none",
+  });
+
+  const headerLines: Array<[Point, Point]> = [
+    [{ x: 0, y: headerHeight }, { x: frame.viewport.width, y: headerHeight }],
+    [{ x: headerWidth, y: 0 }, { x: headerWidth, y: headerHeight }],
+    [
+      { x: frame.viewport.width - headerSectionWidth * 2, y: 0 },
+      { x: frame.viewport.width - headerSectionWidth * 2, y: headerHeight },
+    ],
+    [
+      { x: frame.viewport.width - headerSectionWidth, y: 0 },
+      { x: frame.viewport.width - headerSectionWidth, y: headerHeight },
+    ],
+  ];
+
+  headerLines.forEach(([start, end]) => {
+    headerOutline.append(
+      createSvgElement("line", {
+        x1: start.x,
+        y1: start.y,
+        x2: end.x,
+        y2: end.y,
+        "vector-effect": "non-scaling-stroke",
+      }),
+    );
   });
 
   const contentGroup = createSvgElement("g", {
@@ -425,7 +746,6 @@ function render(spec: CompositionSpec, svg: SVGSVGElement): void {
   });
 
   const structuralLines: Array<[Point, Point]> = [
-    [{ x: geometry.junction.x, y: 0 }, geometry.junction],
     [geometry.junction, geometry.leftHit],
     [geometry.branchStart, geometry.branchEnd],
   ];
@@ -442,17 +762,6 @@ function render(spec: CompositionSpec, svg: SVGSVGElement): void {
     );
   });
 
-  const title = createSvgElement("text", {
-    x: geometry.titlePos.x,
-    y: geometry.header.height / 2 + spec.text.headerTextOffsetY,
-    fill: spec.colors.title,
-    "font-family": "'Space Grotesk', 'Helvetica Neue', Arial, sans-serif",
-    "font-size": spec.text.titleSize,
-    "font-weight": 700,
-    "dominant-baseline": "middle",
-  });
-  title.textContent = spec.text.title;
-
   const diamondPoints = [
     `${geometry.diamondCenter.x},${geometry.diamondCenter.y - geometry.diamondHalfDiag}`,
     `${geometry.diamondCenter.x + geometry.diamondHalfDiag},${geometry.diamondCenter.y}`,
@@ -460,9 +769,107 @@ function render(spec: CompositionSpec, svg: SVGSVGElement): void {
     `${geometry.diamondCenter.x - geometry.diamondHalfDiag},${geometry.diamondCenter.y}`,
   ].join(" ");
 
+  const diamondClip = createSvgElement("clipPath", {
+    id: "diamond-grid-clip",
+  });
+  diamondClip.append(
+    createSvgElement("polygon", {
+      points: diamondPoints,
+    }),
+  );
+  defs.append(diamondClip);
+
+  const diamondGroup = createSvgElement("g", {});
+  const diamondGrid = createSvgElement("g", {
+    "clip-path": "url(#diamond-grid-clip)",
+    opacity: 0,
+    "shape-rendering": "crispEdges",
+  });
   const diamond = createSvgElement("polygon", {
     points: diamondPoints,
     fill: spec.colors.diamond,
+  });
+
+  const diamondCells: DiamondCell[] = [];
+  const gridCount = 4;
+  const gridSpan = geometry.diamondHalfDiag * 2;
+  const cellSize = gridSpan / gridCount;
+  const cellGap = Math.max(4, Math.round(cellSize * 0.16));
+  const gridOriginX = geometry.diamondCenter.x - geometry.diamondHalfDiag;
+  const gridOriginY = geometry.diamondCenter.y - geometry.diamondHalfDiag;
+  const shiftStep = Math.max(4, Math.round(cellSize * 0.18));
+
+  for (let row = 0; row < gridCount; row += 1) {
+    for (let column = 0; column < gridCount; column += 1) {
+      const baseX = gridOriginX + column * cellSize + cellGap / 2;
+      const baseY = gridOriginY + row * cellSize + cellGap / 2;
+      const cell = createSvgElement("rect", {
+        x: baseX,
+        y: baseY,
+        width: Math.max(2, cellSize - cellGap),
+        height: Math.max(2, cellSize - cellGap),
+        fill:
+          (row + column) % 2 === 0
+            ? mixColor(spec.colors.diamond, spec.colors.background, 0.14)
+            : mixColor(spec.colors.diamond, spec.colors.title, 0.14),
+        opacity: 0.62,
+      });
+
+      diamondGrid.append(cell);
+      diamondCells.push({
+        rect: cell,
+        baseX,
+        baseY,
+        offsetX: Math.sign(column - (gridCount - 1) / 2) * shiftStep,
+        offsetY: Math.sign(row - (gridCount - 1) / 2) * shiftStep,
+        baseOpacity: 0.62,
+      });
+    }
+  }
+
+  const diamondHit = createSvgElement("rect", {
+    x: geometry.diamondCenter.x - geometry.diamondHalfDiag - cellSize * 0.25,
+    y: geometry.diamondCenter.y - geometry.diamondHalfDiag - cellSize * 0.25,
+    width: gridSpan + cellSize * 0.5,
+    height: gridSpan + cellSize * 0.5,
+    fill: spec.colors.background,
+    "fill-opacity": 0,
+    "pointer-events": "all",
+  });
+  diamondHit.style.cursor = "pointer";
+
+  diamondGroup.append(diamondGrid, diamond, diamondHit);
+
+  const signalGroup = createSvgElement("g", {});
+  const thinkingWidth = estimateTextWidth(spec.text.thinking, spec.text.thinkingSize);
+  const signalBounds: Rect = {
+    x: Math.min(
+      geometry.circleCenter.x - geometry.circleRadius * 1.7,
+      geometry.thinkingPos.x - spec.text.thinkingSize * 0.2,
+    ),
+    y: geometry.circleCenter.y - geometry.circleRadius * 1.7,
+    width:
+      geometry.thinkingPos.x +
+      thinkingWidth -
+      Math.min(
+        geometry.circleCenter.x - geometry.circleRadius * 1.7,
+        geometry.thinkingPos.x - spec.text.thinkingSize * 0.2,
+      ),
+    height:
+      geometry.thinkingPos.y +
+      spec.text.thinkingSize * 0.7 -
+      (geometry.circleCenter.y - geometry.circleRadius * 1.7),
+  };
+
+  const halo = createSvgElement("circle", {
+    cx: geometry.circleCenter.x,
+    cy: geometry.circleCenter.y,
+    r: geometry.circleRadius * 1.08,
+    fill: "none",
+    stroke: spec.colors.circle,
+    "stroke-width": 2,
+    opacity: 0,
+    "vector-effect": "non-scaling-stroke",
   });
 
   const circle = createSvgElement("circle", {
@@ -472,22 +879,64 @@ function render(spec: CompositionSpec, svg: SVGSVGElement): void {
     fill: spec.colors.circle,
   });
 
-  const thinking = createSvgElement("text", {
+  const thinkingSoft = createSvgElement("text", {
     x: geometry.thinkingPos.x,
     y: geometry.thinkingPos.y,
     fill: spec.colors.thinking,
+    opacity: 0.78,
+    filter: "url(#thinking-soften)",
     "font-family": "'Cormorant Garamond', Georgia, serif",
     "font-size": spec.text.thinkingSize,
     "font-weight": 500,
+    "letter-spacing": 1,
   });
-  thinking.textContent = spec.text.thinking;
+  thinkingSoft.textContent = spec.text.thinking;
 
+  const thinkingCrisp = createSvgElement("text", {
+    x: geometry.thinkingPos.x,
+    y: geometry.thinkingPos.y,
+    fill: mixColor(spec.colors.thinking, spec.colors.title, 0.12),
+    opacity: 0.18,
+    "font-family": "'Cormorant Garamond', Georgia, serif",
+    "font-size": spec.text.thinkingSize,
+    "font-weight": 500,
+    "letter-spacing": 0.35,
+  });
+  thinkingCrisp.textContent = spec.text.thinking;
+
+  const signalHit = createSvgElement("rect", {
+    x: signalBounds.x,
+    y: signalBounds.y,
+    width: signalBounds.width,
+    height: signalBounds.height,
+    fill: spec.colors.background,
+    "fill-opacity": 0,
+    "pointer-events": "all",
+  });
+
+  signalGroup.append(halo, circle, thinkingSoft, thinkingCrisp, signalHit);
+
+  const terminalGroup = createSvgElement("g", {});
   const panel = createSvgElement("rect", {
     x: geometry.panel.x,
     y: geometry.panel.y,
     width: geometry.panel.width,
     height: geometry.panel.height,
     fill: spec.colors.panel,
+    "shape-rendering": "crispEdges",
+  });
+
+  const panelBorder = createSvgElement("rect", {
+    x: geometry.panel.x,
+    y: geometry.panel.y,
+    width: geometry.panel.width,
+    height: geometry.panel.height,
+    fill: "none",
+    stroke: spec.colors.line,
+    "stroke-width": strokeWidth,
+    opacity: 0.12,
+    "vector-effect": "non-scaling-stroke",
+    "shape-rendering": "crispEdges",
   });
 
   const cursor = createSvgElement("text", {
@@ -501,9 +950,451 @@ function render(spec: CompositionSpec, svg: SVGSVGElement): void {
   });
   cursor.textContent = spec.text.cursor;
 
-  contentGroup.append(structureGroup, title, diamond, circle, thinking, panel, cursor);
+  const terminalHit = createSvgElement("rect", {
+    x: geometry.panel.x,
+    y: geometry.panel.y,
+    width: geometry.panel.width,
+    height: geometry.panel.height,
+    fill: spec.colors.background,
+    "fill-opacity": 0,
+    "pointer-events": "all",
+  });
 
-  svg.append(background, headerOverlay, horizontalLine, contentGroup);
+  terminalGroup.append(panel, panelBorder, cursor, terminalHit);
+
+  contentGroup.append(structureGroup, diamondGroup, signalGroup, terminalGroup);
+  svg.append(defs, background, headerBoxes, headerOutline, contentGroup);
+
+  return {
+    headerBoxes: headerBoxRefs,
+    diamond: {
+      group: diamondGroup,
+      hit: diamondHit,
+      clean: diamond,
+      gridGroup: diamondGrid,
+      cells: diamondCells,
+      center: geometry.diamondCenter,
+    },
+    signal: {
+      hit: signalHit,
+      halo,
+      thinkingSoft,
+      thinkingCrisp,
+      baseRadius: geometry.circleRadius,
+    },
+    terminal: {
+      hit: terminalHit,
+      panel,
+      border: panelBorder,
+      cursor,
+    },
+  };
+}
+
+function setupHeaderBoxInteraction(
+  refs: HeaderBoxRefs,
+  reducedMotion: boolean,
+): () => void {
+  let progress = 0;
+  let moveCancel: (() => void) | null = null;
+  let pulseCancel: (() => void) | null = null;
+
+  const apply = (): void => {
+    const width = refs.box.width * progress;
+    refs.fill.setAttribute("width", width.toFixed(2));
+    refs.fill.setAttribute("opacity", progress > 0 ? "1" : "0");
+    refs.clipRect.setAttribute("width", width.toFixed(2));
+  };
+
+  const animateTo = (target: number): void => {
+    moveCancel?.();
+
+    if (reducedMotion) {
+      progress = target;
+      apply();
+      return;
+    }
+
+    const from = progress;
+    moveCancel = animate({
+      duration: target > from ? 360 : 180,
+      from,
+      to: target,
+      easing: target > from ? easeOutCubic : easeInOutCubic,
+      onUpdate: (value: number) => {
+        progress = value;
+        apply();
+      },
+      onComplete: () => {
+        moveCancel = null;
+      },
+    });
+  };
+
+  const pulseBorder = (): void => {
+    pulseCancel?.();
+
+    if (reducedMotion) {
+      refs.border.setAttribute("opacity", progress > 0 ? "0.28" : "0");
+      return;
+    }
+
+    pulseCancel = animate({
+      duration: 320,
+      from: 0,
+      to: 1,
+      easing: easeOutCubic,
+      onUpdate: (_value: number, raw: number) => {
+        const intensity = Math.sin(raw * Math.PI);
+        refs.border.setAttribute("opacity", (0.56 * intensity).toFixed(3));
+      },
+      onComplete: () => {
+        refs.border.setAttribute("opacity", "0");
+        pulseCancel = null;
+      },
+    });
+  };
+
+  const handleEnter = (): void => {
+    animateTo(1);
+    pulseBorder();
+  };
+
+  const handleLeave = (): void => {
+    animateTo(0);
+    pulseCancel?.();
+    pulseCancel = null;
+    refs.border.setAttribute("opacity", "0");
+  };
+
+  refs.hit.addEventListener("pointerenter", handleEnter);
+  refs.hit.addEventListener("pointerleave", handleLeave);
+  apply();
+
+  return () => {
+    moveCancel?.();
+    pulseCancel?.();
+    refs.hit.removeEventListener("pointerenter", handleEnter);
+    refs.hit.removeEventListener("pointerleave", handleLeave);
+  };
+}
+
+function applyDiamondRotation(refs: DiamondRefs, angle: number): void {
+  if (angle === 0) {
+    refs.group.removeAttribute("transform");
+    return;
+  }
+
+  refs.group.setAttribute(
+    "transform",
+    `translate(${refs.center.x} ${refs.center.y}) rotate(${angle}) translate(${-refs.center.x} ${-refs.center.y})`,
+  );
+}
+
+function setupDiamondInteraction(refs: DiamondRefs, reducedMotion: boolean): () => void {
+  let hoverCancel: (() => void) | null = null;
+  let pressCancel: (() => void) | null = null;
+
+  const applyFacetState = (amount: number): void => {
+    refs.clean.setAttribute("opacity", (1 - amount * 0.58).toFixed(3));
+    refs.gridGroup.setAttribute("opacity", (amount * 0.9).toFixed(3));
+
+    const snapped = Math.round(amount * 4) / 4;
+    refs.cells.forEach((cell) => {
+      cell.rect.setAttribute("x", (cell.baseX + cell.offsetX * snapped).toFixed(2));
+      cell.rect.setAttribute("y", (cell.baseY + cell.offsetY * snapped).toFixed(2));
+      cell.rect.setAttribute(
+        "opacity",
+        (cell.baseOpacity * (0.65 + snapped * 0.35)).toFixed(3),
+      );
+    });
+  };
+
+  const triggerHoverBurst = (): void => {
+    hoverCancel?.();
+
+    if (reducedMotion) {
+      applyFacetState(0);
+      return;
+    }
+
+    hoverCancel = animate({
+      duration: 260,
+      from: 0,
+      to: 1,
+      easing: easeOutCubic,
+      onUpdate: (_value: number, raw: number) => {
+        applyFacetState(Math.sin(raw * Math.PI));
+      },
+      onComplete: () => {
+        applyFacetState(0);
+        hoverCancel = null;
+      },
+    });
+  };
+
+  const triggerPress = (): void => {
+    pressCancel?.();
+
+    if (reducedMotion) {
+      applyDiamondRotation(refs, 0);
+      return;
+    }
+
+    pressCancel = runStepSequence(
+      [0, -6, 4, -2, 0] as const,
+      48,
+      (angle) => {
+        applyDiamondRotation(refs, angle);
+      },
+      () => {
+        applyDiamondRotation(refs, 0);
+        pressCancel = null;
+      },
+    );
+  };
+
+  const handleEnter = (): void => {
+    triggerHoverBurst();
+  };
+
+  const handleDown = (): void => {
+    triggerHoverBurst();
+    triggerPress();
+  };
+
+  refs.hit.addEventListener("pointerenter", handleEnter);
+  refs.hit.addEventListener("pointerdown", handleDown);
+  applyFacetState(0);
+
+  return () => {
+    hoverCancel?.();
+    pressCancel?.();
+    refs.hit.removeEventListener("pointerenter", handleEnter);
+    refs.hit.removeEventListener("pointerdown", handleDown);
+    applyFacetState(0);
+    applyDiamondRotation(refs, 0);
+  };
+}
+
+function setupSignalInteraction(
+  refs: SignalRefs,
+  spec: CompositionSpec,
+  reducedMotion: boolean,
+): () => void {
+  let crisp = 0;
+  let crispCancel: (() => void) | null = null;
+  let pulseCancel: (() => void) | null = null;
+  const crispFill = mixColor(spec.colors.thinking, spec.colors.title, 0.24);
+
+  const apply = (): void => {
+    refs.thinkingSoft.setAttribute("opacity", (0.78 - crisp * 0.58).toFixed(3));
+    refs.thinkingSoft.setAttribute("letter-spacing", (1 - crisp * 0.85).toFixed(2));
+    refs.thinkingCrisp.setAttribute("opacity", (0.18 + crisp * 0.82).toFixed(3));
+    refs.thinkingCrisp.setAttribute("letter-spacing", (0.35 * (1 - crisp)).toFixed(2));
+    refs.thinkingCrisp.setAttribute("fill", interpolateColor(spec.colors.thinking, crispFill, crisp));
+  };
+
+  const animateTo = (target: number): void => {
+    crispCancel?.();
+
+    if (reducedMotion) {
+      crisp = target;
+      apply();
+      return;
+    }
+
+    const from = crisp;
+    crispCancel = animate({
+      duration: target > from ? 260 : 180,
+      from,
+      to: target,
+      easing: easeInOutCubic,
+      onUpdate: (value: number) => {
+        crisp = value;
+        apply();
+      },
+      onComplete: () => {
+        crispCancel = null;
+      },
+    });
+  };
+
+  const triggerPulse = (): void => {
+    pulseCancel?.();
+
+    if (reducedMotion) {
+      refs.halo.setAttribute("opacity", "0.16");
+      return;
+    }
+
+    pulseCancel = animate({
+      duration: 420,
+      from: 0,
+      to: 1,
+      easing: easeOutCubic,
+      onUpdate: (_value: number, raw: number) => {
+        refs.halo.setAttribute("r", (refs.baseRadius * (1.08 + raw * 0.82)).toFixed(2));
+        refs.halo.setAttribute("opacity", (0.3 * (1 - raw)).toFixed(3));
+        refs.halo.setAttribute("stroke-width", (1.8 + raw * 1.4).toFixed(2));
+      },
+      onComplete: () => {
+        refs.halo.setAttribute("r", (refs.baseRadius * 1.08).toFixed(2));
+        refs.halo.setAttribute("opacity", "0");
+        refs.halo.setAttribute("stroke-width", "2");
+        pulseCancel = null;
+      },
+    });
+  };
+
+  const handleEnter = (): void => {
+    animateTo(1);
+    triggerPulse();
+  };
+
+  const handleLeave = (): void => {
+    animateTo(0);
+    pulseCancel?.();
+    pulseCancel = null;
+    refs.halo.setAttribute("opacity", "0");
+    refs.halo.setAttribute("r", (refs.baseRadius * 1.08).toFixed(2));
+    refs.halo.setAttribute("stroke-width", "2");
+  };
+
+  refs.hit.addEventListener("pointerenter", handleEnter);
+  refs.hit.addEventListener("pointerleave", handleLeave);
+  apply();
+
+  return () => {
+    crispCancel?.();
+    pulseCancel?.();
+    refs.hit.removeEventListener("pointerenter", handleEnter);
+    refs.hit.removeEventListener("pointerleave", handleLeave);
+    refs.halo.setAttribute("opacity", "0");
+  };
+}
+
+function randomGhostCharacter(): string {
+  const glyphs = ["/", "_", ":", "~", "="];
+  return glyphs[Math.floor(Math.random() * glyphs.length)];
+}
+
+function setupTerminalInteraction(
+  refs: TerminalRefs,
+  spec: CompositionSpec,
+  reducedMotion: boolean,
+): () => void {
+  let active = 0;
+  let stateCancel: (() => void) | null = null;
+  let typingCancel: (() => void) | null = null;
+  const activeFill = mixColor(spec.colors.panel, spec.colors.title, 0.18);
+  const activeBorder = mixColor(spec.colors.line, spec.colors.title, 0.58);
+  const activeCursor = mixColor(spec.colors.cursor, spec.colors.background, 0.88);
+
+  const apply = (): void => {
+    refs.panel.setAttribute("fill", interpolateColor(spec.colors.panel, activeFill, active));
+    refs.border.setAttribute("stroke", interpolateColor(spec.colors.line, activeBorder, active));
+    refs.border.setAttribute("opacity", (0.12 + active * 0.56).toFixed(3));
+    refs.cursor.setAttribute("fill", interpolateColor(spec.colors.cursor, activeCursor, active));
+  };
+
+  const animateTo = (target: number): void => {
+    stateCancel?.();
+
+    if (reducedMotion) {
+      active = target;
+      apply();
+      return;
+    }
+
+    const from = active;
+    stateCancel = animate({
+      duration: target > from ? 240 : 180,
+      from,
+      to: target,
+      easing: easeInOutCubic,
+      onUpdate: (value: number) => {
+        active = value;
+        apply();
+      },
+      onComplete: () => {
+        stateCancel = null;
+      },
+    });
+  };
+
+  const triggerTyping = (): void => {
+    typingCancel?.();
+
+    if (reducedMotion) {
+      refs.cursor.textContent = spec.text.cursor;
+      return;
+    }
+
+    const firstGhost = randomGhostCharacter();
+    const secondGhost = randomGhostCharacter();
+    const frames = [
+      spec.text.cursor,
+      `..${firstGhost}|`,
+      `.${firstGhost}${secondGhost}|`,
+      spec.text.cursor,
+    ] as const;
+
+    typingCancel = runStepSequence(
+      frames,
+      88,
+      (frame) => {
+        refs.cursor.textContent = frame;
+      },
+      () => {
+        refs.cursor.textContent = spec.text.cursor;
+        typingCancel = null;
+      },
+    );
+  };
+
+  const handleEnter = (): void => {
+    animateTo(1);
+    triggerTyping();
+  };
+
+  const handleLeave = (): void => {
+    animateTo(0);
+    typingCancel?.();
+    typingCancel = null;
+    refs.cursor.textContent = spec.text.cursor;
+  };
+
+  refs.hit.addEventListener("pointerenter", handleEnter);
+  refs.hit.addEventListener("pointerleave", handleLeave);
+  apply();
+
+  return () => {
+    stateCancel?.();
+    typingCancel?.();
+    refs.hit.removeEventListener("pointerenter", handleEnter);
+    refs.hit.removeEventListener("pointerleave", handleLeave);
+    refs.cursor.textContent = spec.text.cursor;
+  };
+}
+
+function setupInteractions(
+  refs: InteractionRefs,
+  spec: CompositionSpec,
+  reducedMotion: boolean,
+): () => void {
+  const cleanups = [
+    ...refs.headerBoxes.map((box) => setupHeaderBoxInteraction(box, reducedMotion)),
+    setupDiamondInteraction(refs.diamond, reducedMotion),
+    setupSignalInteraction(refs.signal, spec, reducedMotion),
+    setupTerminalInteraction(refs.terminal, spec, reducedMotion),
+  ];
+
+  return () => {
+    cleanups.forEach((cleanup) => {
+      cleanup();
+    });
+  };
 }
 
 function mount(spec: CompositionSpec): void {
@@ -513,7 +1404,18 @@ function mount(spec: CompositionSpec): void {
   }
 
   const host = globalThis;
+  const reducedMotionQuery = host.matchMedia?.("(prefers-reduced-motion: reduce)") ?? null;
   let frameId: number | null = null;
+  let cleanupInteractions: (() => void) | null = null;
+
+  const commitRender = (): void => {
+    cleanupInteractions?.();
+    cleanupInteractions = setupInteractions(
+      render(spec, svg),
+      spec,
+      Boolean(reducedMotionQuery?.matches),
+    );
+  };
 
   const scheduleRender = (): void => {
     if (frameId !== null) {
@@ -522,7 +1424,7 @@ function mount(spec: CompositionSpec): void {
 
     frameId = host.requestAnimationFrame(() => {
       frameId = null;
-      render(spec, svg);
+      commitRender();
     });
   };
 
@@ -532,6 +1434,7 @@ function mount(spec: CompositionSpec): void {
     scheduleRender();
   });
   observer.observe(svg);
+  reducedMotionQuery?.addEventListener("change", scheduleRender);
 }
 
 mount(SPEC);
