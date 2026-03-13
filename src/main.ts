@@ -922,15 +922,18 @@ function deriveInfoLayout(
   const sideFits = sideWidth >= 330;
 
   if (sideFits) {
-    const topInset = clamp(frame.viewport.height * 0.12, 82, 124);
+    const w = Math.min(sideWidth, preferredWidth);
+    const heroSize = clamp(w * 0.08, 30, 40);
+    const bodySize = clamp(w * 0.05, 20, 22);
+    const offsetToBodyMid = heroSize * 1.04 + 22 + bodySize * 1.34;
+    const diamondCenterPx = geometry.diamondCenter.y * frame.scale;
+    const idealY = diamondCenterPx - offsetToBodyMid;
+    const minY = headerHeight + clamp(frame.viewport.height * 0.04, 32, 48);
 
     return {
       x: sideX,
-      y: Math.max(
-        headerHeight + clamp(frame.viewport.height * 0.04, 32, 48),
-        geometry.diamondCenter.y * frame.scale - topInset,
-      ),
-      width: Math.min(sideWidth, preferredWidth),
+      y: Math.max(minY, idealY),
+      width: w,
     };
   }
 
