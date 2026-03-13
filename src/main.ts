@@ -179,6 +179,7 @@ type InfoLayout = {
   x: number;
   y: number;
   width: number;
+  diamondCenterY: number;
 };
 
 type ResolvedType = {
@@ -781,6 +782,16 @@ function renderLinkedInIcon(parent: SVGElement, color: string): void {
   parent.append(text);
 }
 
+function renderGitHubIcon(parent: SVGElement, color: string): void {
+  parent.append(
+    createSvgElement("path", {
+      d: "M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.416 22 12c0-5.523-4.477-10-10-10Z",
+      fill: color,
+      stroke: "none",
+    }),
+  );
+}
+
 function appendContactLinks(
   parent: SVGElement,
   x: number,
@@ -834,6 +845,14 @@ function appendContactLinks(
       title: "linkedin.com/in/eycyang",
       external: true,
       renderIcon: renderLinkedInIcon,
+    },
+    {
+      kind: "link",
+      href: "https://github.com/ecommerce-y/",
+      label: "Open Ethan's GitHub profile",
+      title: "github.com/ecommerce-y",
+      external: true,
+      renderIcon: renderGitHubIcon,
     },
   ];
 
@@ -1065,6 +1084,7 @@ function deriveInfoLayout(
       x: sideX,
       y: Math.max(minY, idealY),
       width: w,
+      diamondCenterY: diamondCenterPx,
     };
   }
 
@@ -1072,6 +1092,7 @@ function deriveInfoLayout(
     x: edgePad,
     y: geometry.branchEnd.y * frame.scale + clamp(frame.viewport.height * 0.05, 28, 54),
     width: frame.viewport.width - edgePad * 2,
+    diamondCenterY: geometry.diamondCenter.y * frame.scale,
   };
 }
 
@@ -1126,14 +1147,17 @@ function renderManifestoPreview(
     const projects: Array<{
       nameLines: string[];
       details: string[];
+      link?: string;
     }> = [
       {
         nameLines: ["HSPorter"],
-        details: ["AI-powered trade compliance."],
+        details: ["AI-powered trade compliance.", "Interviewed at YC."],
+        link: "https://www.youtube.com/watch?v=cyPW32r1W-E",
       },
       {
         nameLines: ["Ideas of NYC"],
-        details: ["Mapping NYC's participatory budget."],
+        details: ["Mapping NYC's participatory budget.", "Deploying with NYC gov."],
+        link: "https://ionyc.netlify.app/",
       },
     ];
 
@@ -1141,7 +1165,7 @@ function renderManifestoPreview(
       parent,
       x,
       cursorY,
-      ["Products I've built."],
+      ["Things I've worked on."],
       {
         fill: t.colors.body,
         fontFamily: SANS_FONT,
@@ -1153,19 +1177,44 @@ function renderManifestoPreview(
     cursorY += t.gap.afterPageHeading;
 
     projects.forEach((project, index) => {
-      cursorY = appendTextLines(
-        parent,
-        x,
-        cursorY,
-        project.nameLines,
-        {
-          fill: t.colors.body,
-          fontFamily: SANS_FONT,
-          fontSize: t.itemTitle.size,
-          fontWeight: t.itemTitle.weight,
-        },
-        t.itemTitle.size * t.itemTitle.lineHeight,
-      );
+      if (project.link) {
+        const link = createSvgElement("a", {
+          href: project.link,
+          target: "_blank",
+          rel: "noreferrer noopener",
+        });
+        link.style.cursor = "pointer";
+        const linkGroup = createSvgElement("g", {});
+        cursorY = appendTextLines(
+          linkGroup,
+          x,
+          cursorY,
+          project.nameLines,
+          {
+            fill: t.colors.body,
+            fontFamily: SANS_FONT,
+            fontSize: t.itemTitle.size,
+            fontWeight: t.itemTitle.weight,
+          },
+          t.itemTitle.size * t.itemTitle.lineHeight,
+        );
+        link.append(linkGroup);
+        parent.append(link);
+      } else {
+        cursorY = appendTextLines(
+          parent,
+          x,
+          cursorY,
+          project.nameLines,
+          {
+            fill: t.colors.body,
+            fontFamily: SANS_FONT,
+            fontSize: t.itemTitle.size,
+            fontWeight: t.itemTitle.weight,
+          },
+          t.itemTitle.size * t.itemTitle.lineHeight,
+        );
+      }
       cursorY += t.gap.titleToDetail;
       cursorY = appendTextLines(
         parent,
@@ -1217,14 +1266,14 @@ function renderManifestoPreview(
 
   const sections: Array<{
     label: string;
-    items: Array<{ title: string; detail?: string; image?: string; link?: string }>;
+    items: Array<{ title: string; detail?: string; image?: string; link?: string; quote?: { text: string; author: string } }>;
   }> = [
     {
       label: "Favorite artist",
       items: [{ title: "Theo van Doesburg", image: "composition.png" }],
     },
     {
-      label: "Favorite songs",
+      label: "Favorite music",
       items: [
         { title: "Tesselation", detail: "Mild High Club", link: "https://open.spotify.com/track/3BIzHNxAQbRTY4LCp1oMR1" },
         { title: "Juna", detail: "Clairo", link: "https://open.spotify.com/track/2mWfVxEo4xZYDaz0v7hYrN" },
@@ -1234,14 +1283,18 @@ function renderManifestoPreview(
     {
       label: "Favorite books",
       items: [
-        { title: "The Road to Serfdom" },
+        { title: "The Road to Serfdom", quote: { text: "\u201CTo act on behalf of a group seems to free people of many of the moral restraints which control their behaviour as individuals within the group.\u201D", author: "Friedrich Hayek" } },
         { title: "The Calculus of Consent" },
         { title: "Team of Rivals" },
       ],
     },
   ];
 
+  let firstSectionTitleY = 0;
+  const pendingImages: Array<{ src: string; hitY: number; hitTitle: string }> = [];
+
   sections.forEach(({ label, items }, index) => {
+    if (index === 0) firstSectionTitleY = cursorY;
     cursorY = appendTextLines(
       parent,
       x,
@@ -1256,14 +1309,6 @@ function renderManifestoPreview(
       t.itemTitle.size * t.itemTitle.lineHeight,
     );
     cursorY += t.gap.titleToDetail;
-
-    const detailItems = items.filter((item) => item.detail !== undefined);
-    const detailColumnX =
-      detailItems.length > 0
-        ? x +
-          Math.max(...detailItems.map((item) => estimateTextWidth(item.title, t.detail.size))) +
-          t.detail.size * 0.6
-        : x;
 
     const lineH = t.detail.size * t.detail.lineHeight;
     const sectionTopY = cursorY;
@@ -1296,21 +1341,39 @@ function renderManifestoPreview(
     };
 
     items.forEach((item) => {
-      const titleNode = appendText(parent, x, cursorY, item.title, {
-        fill: t.colors.body,
-        fontFamily: SANS_FONT,
-        fontSize: t.detail.size,
-        fontWeight: t.detail.weight,
-      });
-
+      let titleNode: SVGTextElement;
       let detailNode: SVGTextElement | null = null;
+
       if (item.detail) {
-        detailNode = appendText(parent, detailColumnX, cursorY, item.detail, {
-          fill: t.colors.detail,
+        const combined = createSvgElement("text", {
+          x,
+          y: cursorY,
+          fill: t.colors.body,
+          "font-family": SANS_FONT,
+          "font-size": t.detail.size,
+          "font-weight": t.detail.weight,
+          "dominant-baseline": "hanging",
+        });
+
+        const titleSpan = document.createElementNS(svgNs, "tspan");
+        titleSpan.textContent = `${item.title}, `;
+        combined.append(titleSpan);
+
+        const detailSpan = document.createElementNS(svgNs, "tspan");
+        detailSpan.textContent = item.detail;
+        detailSpan.setAttribute("fill", t.colors.body);
+        detailSpan.setAttribute("font-style", "italic");
+        combined.append(detailSpan);
+
+        parent.append(combined);
+        titleNode = combined;
+        detailNode = combined;
+      } else {
+        titleNode = appendText(parent, x, cursorY, item.title, {
+          fill: t.colors.body,
           fontFamily: SANS_FONT,
           fontSize: t.detail.size,
           fontWeight: t.detail.weight,
-          fontStyle: "italic",
         });
       }
 
@@ -1387,26 +1450,58 @@ function renderManifestoPreview(
       }
 
       if (item.image) {
-        const imgSize = clamp(layout.width * 0.42, 130, 180);
-        const imgGap = clamp(layout.width * 0.08, 24, 40);
-        const imgX = x + layout.width + imgGap;
-        const imgY = cursorY - imgSize * 0.4;
+        pendingImages.push({ src: item.image, hitY: cursorY, hitTitle: item.title });
+      }
 
-        const preview = createSvgElement("image", {
-          href: item.image,
-          x: imgX,
-          y: imgY,
-          width: imgSize,
-          height: imgSize,
-          opacity: 0,
-          preserveAspectRatio: "xMidYMid slice",
+      if (item.quote) {
+        const quoteGap = clamp(layout.width * 0.08, 24, 40);
+        const quoteX = x + layout.width + quoteGap;
+        const quoteMaxWidth = clamp(layout.width * 0.55, 180, 240);
+        const quoteFontSize = t.detail.size * 0.72;
+        const quoteLineHeight = quoteFontSize * 1.45;
+        const authorFontSize = quoteFontSize * 0.85;
+
+        const words = item.quote.text.split(" ");
+        const lines: string[] = [];
+        let currentLine = "";
+        words.forEach((word) => {
+          const testLine = currentLine ? `${currentLine} ${word}` : word;
+          if (estimateTextWidth(testLine, quoteFontSize) > quoteMaxWidth && currentLine) {
+            lines.push(currentLine);
+            currentLine = word;
+          } else {
+            currentLine = testLine;
+          }
         });
-        preview.style.transition = "opacity 0.25s ease";
-        preview.style.pointerEvents = "none";
-        parent.append(preview);
+        if (currentLine) lines.push(currentLine);
+
+        const quoteGroup = createSvgElement("g", { opacity: 0 });
+        quoteGroup.style.transition = "opacity 0.25s ease";
+        quoteGroup.style.pointerEvents = "none";
+
+        const quoteY = cursorY;
+        lines.forEach((line, lineIdx) => {
+          appendText(quoteGroup, quoteX, quoteY + lineIdx * quoteLineHeight, line, {
+            fill: t.colors.detail,
+            fontFamily: "'Cormorant Garamond', Georgia, serif",
+            fontSize: quoteFontSize,
+            fontWeight: 400,
+            fontStyle: "italic",
+          });
+        });
+
+        const authorY = quoteY + lines.length * quoteLineHeight + quoteFontSize * 0.4;
+        appendText(quoteGroup, quoteX, authorY, `\u2014 ${item.quote.author}`, {
+          fill: t.colors.detail,
+          fontFamily: SANS_FONT,
+          fontSize: authorFontSize,
+          fontWeight: 400,
+        });
+
+        parent.append(quoteGroup);
 
         const hitPad = 4;
-        const hit = createSvgElement("rect", {
+        const quoteHit = createSvgElement("rect", {
           x: x - hitPad,
           y: cursorY - hitPad,
           width: estimateTextWidth(item.title, t.detail.size) + hitPad * 2,
@@ -1414,14 +1509,14 @@ function renderManifestoPreview(
           fill: "transparent",
           "pointer-events": "all",
         });
-        hit.style.cursor = "pointer";
-        hit.addEventListener("pointerenter", () => {
-          preview.setAttribute("opacity", "1");
+        quoteHit.style.cursor = "default";
+        quoteHit.addEventListener("pointerenter", () => {
+          quoteGroup.setAttribute("opacity", "1");
         });
-        hit.addEventListener("pointerleave", () => {
-          preview.setAttribute("opacity", "0");
+        quoteHit.addEventListener("pointerleave", () => {
+          quoteGroup.setAttribute("opacity", "0");
         });
-        parent.append(hit);
+        parent.append(quoteHit);
       }
 
       cursorY += t.detail.size * t.detail.lineHeight;
@@ -1442,6 +1537,45 @@ function renderManifestoPreview(
       );
       cursorY += t.gap.sectionGap;
     }
+  });
+
+  pendingImages.forEach((img) => {
+    const imgTopY = firstSectionTitleY;
+    const imgBottomY = cursorY;
+    const imgHeight = imgBottomY - imgTopY;
+    const imgGap = clamp(layout.width * 0.12, 36, 60);
+    const imgX = x + layout.width + imgGap;
+
+    const preview = createSvgElement("image", {
+      href: img.src,
+      x: imgX,
+      y: imgTopY,
+      width: imgHeight,
+      height: imgHeight,
+      opacity: 0,
+      preserveAspectRatio: "xMidYMid slice",
+    });
+    preview.style.transition = "opacity 0.25s ease";
+    preview.style.pointerEvents = "none";
+    parent.append(preview);
+
+    const hitPad = 4;
+    const hit = createSvgElement("rect", {
+      x: x - hitPad,
+      y: img.hitY - hitPad,
+      width: estimateTextWidth(img.hitTitle, t.detail.size) + hitPad * 2,
+      height: t.detail.size * t.detail.lineHeight + hitPad * 2,
+      fill: "transparent",
+      "pointer-events": "all",
+    });
+    hit.style.cursor = "pointer";
+    hit.addEventListener("pointerenter", () => {
+      preview.setAttribute("opacity", "1");
+    });
+    hit.addEventListener("pointerleave", () => {
+      preview.setAttribute("opacity", "0");
+    });
+    parent.append(hit);
   });
 }
 
@@ -1717,6 +1851,11 @@ function render(
     `${geometry.diamondCenter.x - geometry.diamondHalfDiag},${geometry.diamondCenter.y}`,
   ].join(" ");
 
+  const diamondLink = createSvgElement("a", {
+    href: "https://armada.build/",
+    target: "_blank",
+    rel: "noreferrer noopener",
+  });
   const diamondGroup = createSvgElement("g", {});
   const diamond = createSvgElement("polygon", {
     points: diamondPoints,
@@ -1735,7 +1874,13 @@ function render(
   diamondHit.style.cursor = "pointer";
 
   diamondGroup.append(diamond, diamondHit);
+  diamondLink.append(diamondGroup);
 
+  const signalLink = createSvgElement("a", {
+    href: "https://cornellclaude.club/",
+    target: "_blank",
+    rel: "noreferrer noopener",
+  });
   const signalGroup = createSvgElement("g", {});
   const thinkingWidth = estimateTextWidth(spec.text.thinking, spec.text.thinkingSize);
   const signalBounds: Rect = {
@@ -1810,7 +1955,9 @@ function render(
     "pointer-events": "all",
   });
 
+  signalHit.style.cursor = "pointer";
   signalGroup.append(halo, circle, thinkingSoft, thinkingCrisp, signalHit);
+  signalLink.append(signalGroup);
 
   const terminalGroup = createSvgElement("g", {});
   const panel = createSvgElement("rect", {
@@ -1845,7 +1992,7 @@ function render(
 
   terminalGroup.append(panel, cursor, terminalHit);
 
-  contentGroup.append(structureGroup, boatGroup, diamondGroup, signalGroup, terminalGroup);
+  contentGroup.append(structureGroup, boatGroup, diamondLink, signalLink, terminalGroup);
   const infoLayout = deriveInfoLayout(frame, bounds, geometry, headerHeight, spec, state.page);
   renderManifestoPreview(infoGroup, infoLayout, state, spec, onEmailCopy);
 
