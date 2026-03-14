@@ -1224,12 +1224,12 @@ function renderManifestoPreview(
       {
         nameLines: ["Lessons from Watergate"],
         detail: ["On the incentives of institutions.", "The Concord Review, Spring '24."],
-        link: "./lessons-from-watergate.pdf",
+        link: "./papers/lessons-from-watergate.pdf",
       },
       {
         nameLines: ["Canada's Road to Serfdom"],
         detail: ["On regulation of markets and society.", "Canadian Student Review, Fall '23."],
-        link: "./canadas-road-to-serfdom.pdf",
+        link: "./papers/canadas-road-to-serfdom.pdf",
       },
     ];
 
@@ -1462,6 +1462,35 @@ function renderManifestoPreview(
 
     chevronButton.append(hit);
     parent.append(chevronButton);
+
+    // subtle idle pulse so user notices the chevron
+    if (!reducedMotion) {
+      const pulseInterval = globalThis.setInterval(() => {
+        if (transitioning) return;
+        animate({
+          duration: 600,
+          from: 0,
+          to: 1,
+          easing: easeOutCubic,
+          onUpdate: (_v: number, raw: number) => {
+            const nudge = Math.sin(raw * Math.PI) * 2.5;
+            chevronGroup.setAttribute("transform", `translate(${nudge.toFixed(2)} 0)`);
+          },
+          onComplete: () => {
+            chevronGroup.removeAttribute("transform");
+          },
+        });
+      }, 1000);
+      // clean up on next render
+      const observer = new MutationObserver(() => {
+        if (!chevronButton.isConnected) {
+          globalThis.clearInterval(pulseInterval);
+          observer.disconnect();
+        }
+      });
+      observer.observe(parent, { childList: true });
+    }
+
     return chevronY + chevronSize + hitPad;
   }
 
@@ -1486,7 +1515,7 @@ function renderManifestoPreview(
   }> = [
     {
       label: "Favorite artist",
-      items: [{ title: "Theo van Doesburg", image: "composition.webp", link: "https://www.moma.org/artists/6076-theo-van-doesburg" }],
+      items: [{ title: "Theo van Doesburg", image: "img/composition.webp", link: "https://www.moma.org/artists/6076-theo-van-doesburg" }],
     },
     {
       label: "Favorite music",
