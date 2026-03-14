@@ -1167,29 +1167,29 @@ function renderManifestoPreview(
   if (state.page === "work") {
     const projects: Array<{
       nameLines: string[];
-      detail: string;
+      detail: string[];
       link?: string;
     }> = [
       {
         nameLines: ["HSPorter"],
-        detail: "Interviewed at YC.",
+        detail: ["AI for trade compliance.", "Interviewed at YC."],
         link: "https://www.youtube.com/watch?v=cyPW32r1W-E",
       },
       {
         nameLines: ["Ideas of NYC"],
-        detail: "Deploying with NYC gov.",
+        detail: ["Visualizing $65M in participatory budgeting.", "Deploying with NYC gov."],
         link: "https://ionyc.netlify.app/",
       },
       ...(layout.mobile
         ? [
             {
               nameLines: ["Armada"],
-              detail: "armada.build",
+              detail: ["armada.build"],
               link: "https://armada.build/",
             },
             {
               nameLines: ["Cornell Claude", "Club"],
-              detail: "cornellclaude.club",
+              detail: ["cornellclaude.club"],
               link: "https://cornellclaude.club/",
             },
           ]
@@ -1198,17 +1198,17 @@ function renderManifestoPreview(
 
     const publications: Array<{
       nameLines: string[];
-      detail: string;
+      detail: string[];
       link?: string;
     }> = [
       {
         nameLines: ["Lessons from Watergate"],
-        detail: "The Concord Review, Spring '24.",
+        detail: ["On the incentives of institutions.", "The Concord Review, Spring '24."],
         link: "./lessons-from-watergate.pdf",
       },
       {
         nameLines: ["Canada's Road to Serfdom"],
-        detail: "Canadian Student Review, Fall '23.",
+        detail: ["On regulation of markets and society.", "Canadian Student Review, Fall '23."],
         link: "./canadas-road-to-serfdom.pdf",
       },
     ];
@@ -1298,7 +1298,7 @@ function renderManifestoPreview(
         itemGroup,
         x,
         cursorY,
-        [item.detail],
+        item.detail,
         {
           fill: t.colors.body,
           fontFamily: SANS_FONT,
@@ -1307,7 +1307,7 @@ function renderManifestoPreview(
         },
         t.detail.size * t.detail.lineHeight,
       );
-      cursorY += t.detail.size * t.detail.lineHeight;
+      cursorY += t.detail.size * t.detail.lineHeight * item.detail.length;
 
       if (index < items.length - 1) {
         cursorY += t.gap.sectionGap;
