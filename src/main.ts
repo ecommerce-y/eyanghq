@@ -1216,7 +1216,7 @@ function renderManifestoPreview(
 
     if (!reducedMotion) {
       animate({
-        duration: 250,
+        duration: 180,
         from: 0,
         to: 1,
         easing: easeOutCubic,
@@ -1306,10 +1306,10 @@ function renderManifestoPreview(
       parent.append(itemGroup);
 
       if (!reducedMotion) {
-        const delay = 60 + index * 60;
+        const delay = 40 + index * 40;
         globalThis.setTimeout(() => {
           animate({
-            duration: 280,
+            duration: 200,
             from: 0,
             to: 1,
             easing: easeOutCubic,
@@ -1374,11 +1374,10 @@ function renderManifestoPreview(
     let transitioning = false;
     const chevronButton = createSvgElement("g", {
       role: "button",
-      tabindex: 0,
-      focusable: "true",
       "aria-label": isBuilt ? "View publications" : "View projects",
     });
     chevronButton.style.cursor = "pointer";
+    chevronButton.style.outline = "none";
 
     const hitPad = 12;
     const hit = createSvgElement("rect", {
@@ -1395,7 +1394,7 @@ function renderManifestoPreview(
       transitioning = true;
       if (!reducedMotion) {
         animate({
-          duration: 180,
+          duration: 120,
           from: 0,
           to: 1,
           easing: easeOutCubic,
