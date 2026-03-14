@@ -120,6 +120,7 @@ type ContactFeedback = {
 type AppState = {
   page: PageKey;
   emailFeedback: ContactFeedback;
+  workSection: "built" | "published";
 };
 
 type HeaderBoxRefs = {
@@ -293,6 +294,7 @@ const SANS_FONT = "'Space Grotesk', 'Helvetica Neue', Arial, sans-serif";
 const INITIAL_STATE: AppState = {
   page: "home",
   emailFeedback: null,
+  workSection: "built",
 };
 
 function toPx(value: number): number {
@@ -1113,6 +1115,7 @@ function renderManifestoPreview(
   state: AppState,
   spec: CompositionSpec,
   onEmailCopy: () => void,
+  onWorkSectionToggle: () => void,
 ): void {
   const t = deriveContentTypography(layout.width, spec);
   const x = layout.x;
@@ -1157,148 +1160,268 @@ function renderManifestoPreview(
   if (state.page === "work") {
     const projects: Array<{
       nameLines: string[];
-      details: string[];
+      detail: string;
       link?: string;
     }> = [
       {
         nameLines: ["HSPorter"],
-        details: ["AI-powered trade compliance.", "Interviewed at YC."],
+        detail: "Interviewed at YC.",
         link: "https://www.youtube.com/watch?v=cyPW32r1W-E",
       },
       {
         nameLines: ["Ideas of NYC"],
-        details: ["Mapping NYC's participatory budget.", "Deploying with NYC gov."],
+        detail: "Deploying with NYC gov.",
         link: "https://ionyc.netlify.app/",
       },
     ];
 
     const publications: Array<{
       nameLines: string[];
-      details: string[];
+      detail: string;
       link?: string;
     }> = [
       {
         nameLines: ["Lessons from Watergate"],
-        details: ["The media's role in scandal and accountability.", "The Concord Review, Spring '24."],
+        detail: "The Concord Review, Spring '24.",
         link: "./Lessons from Watergate.pdf",
       },
       {
         nameLines: ["Canada's Road to Serfdom"],
-        details: ["Hayek's warnings applied to Canadian economic policy.", "Canadian Student Review, Fall '23."],
+        detail: "Canadian Student Review, Fall '23.",
         link: "./Canada's Road to Serfdom.pdf",
       },
     ];
 
-    const columnGap = 40;
-    const twoColFits = !layout.mobile && layout.availableWidth >= layout.width + columnGap + 280;
-    const col2Width = twoColFits ? Math.min(layout.availableWidth - layout.width - columnGap, layout.width) : layout.width;
-    const col2X = twoColFits ? x + layout.width + columnGap : x;
-    const t2 = twoColFits ? deriveContentTypography(col2Width, spec) : t;
+    const isBuilt = state.workSection === "built";
+    const items = isBuilt ? projects : publications;
+    const heading = isBuilt ? "Things I've built." : "Things I've published.";
+    const reducedMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
 
-    const renderColumn = (
-      items: Array<{ nameLines: string[]; details: string[]; link?: string }>,
-      heading: string,
-      colX: number,
-      startY: number,
-      typo: ReturnType<typeof deriveContentTypography>,
-    ): number => {
-      let cy = startY;
-      cy = appendTextLines(
-        parent,
-        colX,
-        cy,
-        [heading],
-        {
-          fill: typo.colors.body,
-          fontFamily: SANS_FONT,
-          fontSize: typo.pageHeading.size,
-          fontWeight: typo.pageHeading.weight,
+    const headingGroup = createSvgElement("g", { opacity: reducedMotion ? 1 : 0 });
+    cursorY = appendTextLines(
+      headingGroup,
+      x,
+      cursorY,
+      [heading],
+      {
+        fill: t.colors.body,
+        fontFamily: SANS_FONT,
+        fontSize: t.pageHeading.size,
+        fontWeight: t.pageHeading.weight,
+      },
+      t.pageHeading.size * t.pageHeading.lineHeight,
+    );
+    cursorY += t.gap.afterPageHeading;
+    parent.append(headingGroup);
+
+    if (!reducedMotion) {
+      animate({
+        duration: 250,
+        from: 0,
+        to: 1,
+        easing: easeOutCubic,
+        onUpdate: (value) => {
+          headingGroup.setAttribute("opacity", value.toFixed(3));
+          headingGroup.setAttribute("transform", `translate(0 ${((1 - value) * 10).toFixed(2)})`);
         },
-        typo.pageHeading.size * typo.pageHeading.lineHeight,
-      );
-      cy += typo.gap.afterPageHeading;
-
-      items.forEach((item, index) => {
-        if (item.link) {
-          const link = createSvgElement("a", {
-            href: item.link,
-            target: "_blank",
-            rel: "noreferrer noopener",
-          });
-          link.style.cursor = "pointer";
-          const linkGroup = createSvgElement("g", {});
-          cy = appendTextLines(
-            linkGroup,
-            colX,
-            cy,
-            item.nameLines,
-            {
-              fill: typo.colors.body,
-              fontFamily: SANS_FONT,
-              fontSize: typo.itemTitle.size,
-              fontWeight: typo.itemTitle.weight,
-            },
-            typo.itemTitle.size * typo.itemTitle.lineHeight,
-          );
-          link.append(linkGroup);
-          parent.append(link);
-        } else {
-          cy = appendTextLines(
-            parent,
-            colX,
-            cy,
-            item.nameLines,
-            {
-              fill: typo.colors.body,
-              fontFamily: SANS_FONT,
-              fontSize: typo.itemTitle.size,
-              fontWeight: typo.itemTitle.weight,
-            },
-            typo.itemTitle.size * typo.itemTitle.lineHeight,
-          );
-        }
-        cy += typo.gap.titleToDetail;
-        cy = appendTextLines(
-          parent,
-          colX,
-          cy,
-          item.details,
-          {
-            fill: typo.colors.body,
-            fontFamily: SANS_FONT,
-            fontSize: typo.detail.size,
-            fontWeight: typo.detail.weight,
-          },
-          typo.detail.size * typo.detail.lineHeight,
-        );
-
-        if (index < items.length - 1) {
-          cy += typo.gap.sectionGap;
-          const lineY = cy;
-          parent.append(
-            createSvgElement("line", {
-              x1: colX,
-              y1: lineY,
-              x2: colX + typo.dividerWidth,
-              y2: lineY,
-              stroke: typo.colors.divider,
-              "stroke-width": 1,
-            }),
-          );
-          cy += typo.gap.sectionGap;
-        }
+        onComplete: () => {
+          headingGroup.removeAttribute("transform");
+        },
       });
-      return cy;
+    }
+
+    items.forEach((item, index) => {
+      const itemGroup = createSvgElement("g", { opacity: reducedMotion ? 1 : 0 });
+
+      if (item.link) {
+        const link = createSvgElement("a", {
+          href: item.link,
+          target: "_blank",
+          rel: "noreferrer noopener",
+        });
+        link.style.cursor = "pointer";
+        const linkGroup = createSvgElement("g", {});
+        cursorY = appendTextLines(
+          linkGroup,
+          x,
+          cursorY,
+          item.nameLines,
+          {
+            fill: t.colors.body,
+            fontFamily: SANS_FONT,
+            fontSize: t.itemTitle.size,
+            fontWeight: t.itemTitle.weight,
+          },
+          t.itemTitle.size * t.itemTitle.lineHeight,
+        );
+        link.append(linkGroup);
+        itemGroup.append(link);
+      } else {
+        cursorY = appendTextLines(
+          itemGroup,
+          x,
+          cursorY,
+          item.nameLines,
+          {
+            fill: t.colors.body,
+            fontFamily: SANS_FONT,
+            fontSize: t.itemTitle.size,
+            fontWeight: t.itemTitle.weight,
+          },
+          t.itemTitle.size * t.itemTitle.lineHeight,
+        );
+      }
+
+      cursorY += t.gap.titleToDetail;
+      appendTextLines(
+        itemGroup,
+        x,
+        cursorY,
+        [item.detail],
+        {
+          fill: t.colors.body,
+          fontFamily: SANS_FONT,
+          fontSize: t.detail.size,
+          fontWeight: t.detail.weight,
+        },
+        t.detail.size * t.detail.lineHeight,
+      );
+      cursorY += t.detail.size * t.detail.lineHeight;
+
+      if (index < items.length - 1) {
+        cursorY += t.gap.sectionGap;
+        itemGroup.append(
+          createSvgElement("line", {
+            x1: x,
+            y1: cursorY,
+            x2: x + t.dividerWidth,
+            y2: cursorY,
+            stroke: t.colors.divider,
+            "stroke-width": 1,
+          }),
+        );
+        cursorY += t.gap.sectionGap;
+      }
+
+      parent.append(itemGroup);
+
+      if (!reducedMotion) {
+        const delay = 60 + index * 60;
+        globalThis.setTimeout(() => {
+          animate({
+            duration: 280,
+            from: 0,
+            to: 1,
+            easing: easeOutCubic,
+            onUpdate: (value) => {
+              itemGroup.setAttribute("opacity", value.toFixed(3));
+              itemGroup.setAttribute("transform", `translate(0 ${((1 - value) * 12).toFixed(2)})`);
+            },
+            onComplete: () => {
+              itemGroup.removeAttribute("transform");
+            },
+          });
+        }, delay);
+      }
+    });
+
+    cursorY += t.gap.sectionGap * 1.5;
+    const chevronSize = clamp(t.detail.size * 0.6, 8, 12);
+    const chevronY = cursorY;
+    const chevronColor = mixColor(spec.colors.line, spec.colors.title, 0.4);
+    const dotRadius = clamp(t.detail.size * 0.14, 2.5, 3.5);
+    const dotGap = dotRadius * 3;
+    const dotY = chevronY + chevronSize / 2;
+
+    [0, 1].forEach((i) => {
+      const isActive = (i === 0 && isBuilt) || (i === 1 && !isBuilt);
+      parent.append(
+        createSvgElement("circle", {
+          cx: x + i * dotGap,
+          cy: dotY,
+          r: dotRadius,
+          fill: isActive ? chevronColor : "none",
+          stroke: chevronColor,
+          "stroke-width": 1,
+        }),
+      );
+    });
+
+    const chevronX = x + dotGap + dotGap * 1.5;
+    const chevronGroup = createSvgElement("g", {});
+    chevronGroup.append(
+      createSvgElement("line", {
+        x1: chevronX,
+        y1: chevronY,
+        x2: chevronX + chevronSize * 0.6,
+        y2: chevronY + chevronSize / 2,
+        stroke: chevronColor,
+        "stroke-width": 1.5,
+        "stroke-linecap": "round",
+      }),
+      createSvgElement("line", {
+        x1: chevronX + chevronSize * 0.6,
+        y1: chevronY + chevronSize / 2,
+        x2: chevronX,
+        y2: chevronY + chevronSize,
+        stroke: chevronColor,
+        "stroke-width": 1.5,
+        "stroke-linecap": "round",
+      }),
+    );
+    parent.append(chevronGroup);
+
+    let transitioning = false;
+    const chevronButton = createSvgElement("g", {
+      role: "button",
+      tabindex: 0,
+      focusable: "true",
+      "aria-label": isBuilt ? "View publications" : "View projects",
+    });
+    chevronButton.style.cursor = "pointer";
+
+    const hitPad = 12;
+    const hit = createSvgElement("rect", {
+      x: x - hitPad,
+      y: chevronY - hitPad,
+      width: chevronX + chevronSize * 0.6 + hitPad - x + hitPad,
+      height: chevronSize + hitPad * 2,
+      fill: "transparent",
+      "pointer-events": "all",
+    });
+
+    const triggerToggle = (): void => {
+      if (transitioning) return;
+      transitioning = true;
+      if (!reducedMotion) {
+        animate({
+          duration: 180,
+          from: 0,
+          to: 1,
+          easing: easeOutCubic,
+          onUpdate: (_value: number, raw: number) => {
+            const bounce = Math.sin(raw * Math.PI * 1.5) * (1 - raw);
+            chevronGroup.setAttribute("transform", `translate(${(bounce * 4).toFixed(2)} 0)`);
+          },
+          onComplete: () => {
+            onWorkSectionToggle();
+          },
+        });
+      } else {
+        onWorkSectionToggle();
+      }
     };
 
-    const col1EndY = renderColumn(projects, "Things I've built.", x, cursorY, t);
+    hit.addEventListener("click", triggerToggle);
+    hit.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        triggerToggle();
+      }
+    });
 
-    if (twoColFits) {
-      renderColumn(publications, "Things I've published.", col2X, cursorY, t2);
-    } else {
-      cursorY = col1EndY + t.gap.sectionGap * 2;
-      renderColumn(publications, "Things I've published.", col2X, cursorY, t);
-    }
+    chevronButton.append(hit);
+    parent.append(chevronButton);
     return;
   }
 
@@ -1591,6 +1714,7 @@ function render(
   svg: SVGSVGElement,
   state: AppState,
   onEmailCopy: () => void,
+  onWorkSectionToggle: () => void,
 ): InteractionRefs {
   const geometry = deriveGeometry(spec);
   const bounds = deriveContentBounds(geometry);
@@ -2012,7 +2136,7 @@ function render(
     contentGroup.style.pointerEvents = "none";
   }
 
-  renderManifestoPreview(infoGroup, infoLayout, state, spec, onEmailCopy);
+  renderManifestoPreview(infoGroup, infoLayout, state, spec, onEmailCopy, onWorkSectionToggle);
 
   svg.append(defs, background, headerBoxes, headerOutline, contentGroup, infoGroup);
 
@@ -2613,7 +2737,7 @@ function mount(spec: CompositionSpec): void {
   const setState = (patch: Partial<AppState>): void => {
     const nextState = { ...state, ...patch };
     const changed =
-      nextState.page !== state.page || nextState.emailFeedback !== state.emailFeedback;
+      nextState.page !== state.page || nextState.emailFeedback !== state.emailFeedback || nextState.workSection !== state.workSection;
 
     if (!changed) {
       return;
@@ -2667,7 +2791,9 @@ function mount(spec: CompositionSpec): void {
   const commitRender = (): void => {
     cleanupInteractions?.();
     cleanupInteractions = setupInteractions(
-      render(spec, svg, state, handleEmailCopy),
+      render(spec, svg, state, handleEmailCopy, () => {
+        setState({ workSection: state.workSection === "built" ? "published" : "built" });
+      }),
       spec,
       Boolean(reducedMotionQuery?.matches),
       setState,
