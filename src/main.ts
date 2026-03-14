@@ -1183,12 +1183,12 @@ function renderManifestoPreview(
       {
         nameLines: ["Lessons from Watergate"],
         detail: "The Concord Review, Spring '24.",
-        link: "./Lessons from Watergate.pdf",
+        link: "./lessons-from-watergate.pdf",
       },
       {
         nameLines: ["Canada's Road to Serfdom"],
         detail: "Canadian Student Review, Fall '23.",
-        link: "./Canada's Road to Serfdom.pdf",
+        link: "./canadas-road-to-serfdom.pdf",
       },
     ];
 
@@ -1446,7 +1446,7 @@ function renderManifestoPreview(
   }> = [
     {
       label: "Favorite artist",
-      items: [{ title: "Theo van Doesburg", image: "composition.png" }],
+      items: [{ title: "Theo van Doesburg", image: "composition.webp" }],
     },
     {
       label: "Favorite music",
