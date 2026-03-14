@@ -1266,7 +1266,7 @@ function renderManifestoPreview(
 
     const isBuilt = state.workSection === "built";
     const items = isBuilt ? projects : publications;
-    const heading = isBuilt ? "Things I've built." : "Things I've published.";
+    const heading = isBuilt ? "Things I'm working on." : "Things I've published.";
     const reducedMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
 
     const headingGroup = createSvgElement("g", { opacity: reducedMotion ? 1 : 0 });
