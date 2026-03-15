@@ -857,7 +857,7 @@ function appendContactLinks(
     {
       kind: "button",
       label: "Copy Ethan's email address",
-      title: "Copy eyanghq@gmail.com",
+      title: "Copy ethanyanghq@gmail.com",
       onPress: onEmailCopy,
       renderIcon: renderEmailIcon,
     },
@@ -2918,7 +2918,7 @@ function mount(spec: CompositionSpec): void {
   const host = globalThis;
   const announcer = ensureAnnouncer("contact-status-announcer");
   const reducedMotionQuery = host.matchMedia?.("(prefers-reduced-motion: reduce)") ?? null;
-  const emailAddress = "eyanghq@gmail.com";
+  const emailAddress = "ethanyanghq@gmail.com";
   let frameId: number | null = null;
   let announceTimeoutId: number | null = null;
   let cleanupInteractions: (() => void) | null = null;
