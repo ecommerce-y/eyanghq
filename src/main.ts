@@ -1554,7 +1554,7 @@ function renderManifestoPreview(
       label: "Favorite music",
       items: [
         { title: "Homage", detail: "Mild High Club", link: "https://open.spotify.com/track/7DcJ6fEBb7BaKuYKTwiDxK" },
-        { title: "Juna", detail: "Clairo", link: "https://open.spotify.com/track/2mWfVxEo4xZYDaz0v7hYrN" },
+        { title: "Kashmir", detail: "Led Zeppelin", link: "https://open.spotify.com/track/5v2vkoTamoisazJFanHJjk" },
         { title: "Ballade No. 1 in G Minor", detail: "Chopin", link: "https://open.spotify.com/track/5Ks5ENUFNQDfaqxjZnCkVJ" },
       ],
     },
